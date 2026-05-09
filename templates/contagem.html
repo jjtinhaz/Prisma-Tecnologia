@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Contagem — {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow">Ciclo · {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}</div>
+      <h2 class="pr-h2">Contagem</h2>
+    </div>
+    <span class="pr-badge pr-badge--info"><span class="pr-badge__dot"></span>{{ itens|length }} itens</span>
+  </div>
+
+  {% if corredores %}
+  <div class="pr-chips">
+    <a href="{{ url_for('contagem', ciclo_id=ciclo.id) }}"
+       class="pr-chip {% if not filtro_corredor %}is-active{% endif %}">
+      Todos
+    </a>
+    {% for c in corredores %}
+    <a href="{{ url_for('contagem', ciclo_id=ciclo.id, corredor=c) }}"
+       class="pr-chip {% if filtro_corredor == c %}is-active{% endif %}">
+      Corredor {{ c }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not itens %}
+  <div class="pr-banner pr-banner--success">
+    <span class="pr-banner__ic">✓</span>
+    <div>Todos os itens deste filtro foram contados.</div>
+  </div>
+  {% endif %}
+
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    {% for item in itens %}
+    {% set reg = item.registros | selectattr('rodada','equalto',1) | list | first %}
+    <div class="pr-card pr-item
+      {% if item.status == 'contado' or item.status == 'aprovado' %}pr-item--counted
+      {% elif item.status == 'divergente' %}pr-item--divergent{% endif %}">
+
+      <div class="pr-item__head">
+        <div class="pr-item__head-right">
+          <span class="pr-code">{{ item.produto.codigo }}</span>
+          {% if item.produto.corredor %}
+          <span class="pr-loc">
+            <i class="bi bi-geo-alt" style="font-size:11px;"></i>
+            {{ item.produto.corredor }}{% if item.produto.prateleira %}/{{ item.produto.prateleira }}{% endif %}
+          </span>
+          {% endif %}
+        </div>
+        {% if item.status == 'contado' or item.status == 'aprovado' %}
+          <span class="pr-badge pr-badge--success"><span class="pr-badge__dot"></span>Contado</span>
+        {% elif item.status == 'divergente' %}
+          <span class="pr-badge pr-badge--warning"><span class="pr-badge__dot"></span>Divergente</span>
+        {% else %}
+          <span class="pr-badge pr-badge--neutral"><span class="pr-badge__dot"></span>Pendente</span>
+        {% endif %}
+      </div>
+
+      <div class="pr-item__title">{{ item.produto.descricao }}</div>
+
+      <div class="pr-item__meta">
+        Esperado: <b>{{ item.quantidade_esperada | int if item.quantidade_esperada == item.quantidade_esperada | int else item.quantidade_esperada }} {{ item.produto.unidade }}</b>
+        {% if reg %}
+        &nbsp;·&nbsp; Contado:
+        <b class="{% if item.status == 'divergente' %}warn{% else %}ok{% endif %}">
+          {{ reg.quantidade_contada | int if reg.quantidade_contada == reg.quantidade_contada | int else reg.quantidade_contada }}
+        </b>
+        &nbsp;·&nbsp; {{ reg.usuario.nome }}
+        {% endif %}
+      </div>
+
+      <form action="{{ url_for('registrar_contagem') }}" method="POST" class="pr-item__form">
+        <input type="hidden" name="item_id" value="{{ item.id }}">
+        <input type="hidden" name="ciclo_id" value="{{ ciclo.id }}">
+        <input type="number" name="quantidade" class="pr-input pr-input--qty"
+               placeholder="Qtd" step="0.01" min="0" required
+               value="{{ reg.quantidade_contada if reg else '' }}"
+               inputmode="decimal">
+        <button type="submit" class="pr-btn pr-btn--primary" style="flex-shrink:0;width:52px;padding:0;">
+          <i class="bi bi-check2" style="font-size:18px;"></i>
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

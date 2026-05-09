@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Prisma{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow">{{ current_user.empresa.nome }}</div>
+      <h2 class="pr-h2">Dashboard</h2>
+    </div>
+    {% if current_user.perfil == 'admin' %}
+    <a href="{{ url_for('importar') }}" class="pr-btn pr-btn--secondary pr-btn--sm">
+      <i class="bi bi-upload"></i> Novo ciclo
+    </a>
+    {% endif %}
+  </div>
+
+  {% if ciclo_ativo %}
+  {% set total      = ciclo_ativo.itens|length %}
+  {% set contados   = ciclo_ativo.itens|selectattr('status','in',['contado','aprovado','ajustado'])|list|length %}
+  {% set divergentes= ciclo_ativo.itens|selectattr('status','equalto','divergente')|list|length %}
+  {% set segunda    = ciclo_ativo.itens|selectattr('status','equalto','segunda_contagem')|list|length %}
+  {% set pendentes  = ciclo_ativo.itens|selectattr('status','equalto','pendente')|list|length %}
+
+  <div class="pr-card" style="margin-bottom:8px;">
+    <div class="pr-cycle__head">
+      <div>
+        <div class="pr-eyebrow">Ciclo ativo</div>
+        <div class="pr-cycle__title">{{ ciclo_ativo.data_referencia.strftime('%d/%m/%Y') }} · {{ ciclo_ativo.status.replace('_',' ') }}</div>
+      </div>
+      <span class="pr-badge pr-badge--info"><span class="pr-badge__dot"></span>Em andamento</span>
+    </div>
+
+    <div class="pr-stats">
+      <div class="pr-stat">
+        <div class="pr-stat__label">Total</div>
+        <div class="pr-stat__value">{{ total }}</div>
+      </div>
+      <div class="pr-stat pr-stat--success">
+        <div class="pr-stat__label">Contados</div>
+        <div class="pr-stat__value">{{ contados }}</div>
+      </div>
+      <div class="pr-stat pr-stat--warning">
+        <div class="pr-stat__label">Divergências</div>
+        <div class="pr-stat__value">{{ divergentes + segunda }}</div>
+      </div>
+      <div class="pr-stat">
+        <div class="pr-stat__label">Pendentes</div>
+        <div class="pr-stat__value">{{ pendentes }}</div>
+      </div>
+    </div>
+
+    {% if total > 0 %}
+    <div class="pr-progress">
+      <span style="width:{{ (contados/total*100)|round }}%;background:var(--success);"></span>
+      <span style="width:{{ ((divergentes+segunda)/total*100)|round }}%;background:var(--warning);"></span>
+    </div>
+    {% endif %}
+
+    <div class="pr-actions">
+      <a href="{{ url_for('contagem', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--primary">
+        Ir para contagem
+      </a>
+      {% if segunda > 0 %}
+      <a href="{{ url_for('segunda_contagem', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--secondary">
+        2ª Contagem ({{ segunda }})
+      </a>
+      {% endif %}
+      {% if divergentes > 0 %}
+      <a href="{{ url_for('divergencias', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--ghost">
+        Divergências ({{ divergentes }})
+      </a>
+      {% endif %}
+      {% if divergentes > 0 and current_user.perfil == 'admin' %}
+      <form action="{{ url_for('gerar_segunda_contagem', ciclo_id=ciclo_ativo.id) }}" method="POST" style="display:contents;">
+        <button class="pr-btn pr-btn--secondary">
+          Gerar 2ª Contagem
+        </button>
+      </form>
+      {% endif %}
+      <a href="{{ url_for('relatorio', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--ghost">
+        Ver relatório
+      </a>
+      {% if current_user.perfil == 'admin' and pendentes == 0 and divergentes == 0 and segunda == 0 %}
+      <form action="{{ url_for('fechar_ciclo', ciclo_id=ciclo_ativo.id) }}" method="POST" style="display:contents;">
+        <button class="pr-btn pr-btn--primary" onclick="return confirm('Fechar este ciclo?')">
+          Fechar ciclo
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% else %}
+  <div class="pr-banner pr-banner--info">
+    <span class="pr-banner__ic">ⓘ</span>
+    <div>Nenhum ciclo ativo.
+      {% if current_user.perfil == 'admin' %}
+      <a href="{{ url_for('importar') }}" style="color:inherit;font-weight:600;text-decoration:underline;">Importe uma movimentação</a> para iniciar.
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="pr-section-head">
+    <h3 class="pr-h3">Histórico</h3>
+  </div>
+
+  <div class="pr-list">
+    {% for ciclo in ciclos %}
+    {% if ciclo.id != (ciclo_ativo.id if ciclo_ativo else -1) %}
+    <div class="pr-list__row">
+      <div>
+        <div class="pr-list__title">{{ ciclo.data_referencia.strftime('%d/%m/%Y') }}</div>
+        <div class="pr-list__sub">{{ ciclo.itens|length }} produtos</div>
+      </div>
+      <div class="pr-list__right">
+        <span class="pr-badge {% if ciclo.status == 'fechado' %}pr-badge--closed{% else %}pr-badge--warning{% endif %}">
+          <span class="pr-badge__dot"></span>{{ ciclo.status.replace('_',' ').title() }}
+        </span>
+        <a href="{{ url_for('relatorio', ciclo_id=ciclo.id) }}" class="pr-iconbtn" title="Ver relatório">
+          <i class="bi bi-chevron-right" style="font-size:13px;"></i>
+        </a>
+      </div>
+    </div>
+    {% endif %}
+    {% else %}
+    <div style="text-align:center;color:var(--fg-3);padding:32px 0;font-size:14px;">Nenhum ciclo anterior.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

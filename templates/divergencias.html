@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Divergências — {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow">Ciclo · {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}</div>
+      <h2 class="pr-h2">Divergências</h2>
+    </div>
+    <span class="pr-badge pr-badge--danger"><span class="pr-badge__dot"></span>{{ itens|length }} itens</span>
+  </div>
+
+  {% if itens %}
+  <div class="pr-banner pr-banner--warning" style="margin-bottom:20px;">
+    <span class="pr-banner__ic">!</span>
+    <div>Estes itens necessitam de ajuste contábil. Informe a quantidade correta e a justificativa.</div>
+  </div>
+  {% else %}
+  <div class="pr-banner pr-banner--success">
+    <span class="pr-banner__ic">✓</span>
+    <div>Nenhuma divergência pendente.
+      <a href="{{ url_for('dashboard') }}" style="color:inherit;font-weight:600;text-decoration:underline;">Voltar ao Dashboard</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    {% for item in itens %}
+    {% set reg1 = item.registros | selectattr('rodada','equalto',1) | list | first %}
+    {% set reg2 = item.registros | selectattr('rodada','equalto',2) | list | first %}
+    {% set qtd_ref = reg2.quantidade_contada if reg2 else (reg1.quantidade_contada if reg1 else 0) %}
+
+    <div class="pr-card pr-item--divergent">
+      <div class="pr-item__head">
+        <div class="pr-item__head-right">
+          <span class="pr-code">{{ item.produto.codigo }}</span>
+          {% if item.produto.corredor %}
+          <span class="pr-loc">
+            <i class="bi bi-geo-alt" style="font-size:11px;"></i>
+            {{ item.produto.corredor }}{% if item.produto.prateleira %}/{{ item.produto.prateleira }}{% endif %}
+          </span>
+          {% endif %}
+        </div>
+        <span class="pr-badge pr-badge--warning"><span class="pr-badge__dot"></span>Divergente</span>
+      </div>
+
+      <div class="pr-item__title">{{ item.produto.descricao }}</div>
+
+      <div class="pr-3col">
+        <div>
+          <div class="pr-3col__lbl">Esperado</div>
+          <div class="pr-3col__val">{{ item.quantidade_esperada | int if item.quantidade_esperada == item.quantidade_esperada | int else item.quantidade_esperada }}</div>
+        </div>
+        <div>
+          <div class="pr-3col__lbl">1ª Contagem</div>
+          <div class="pr-3col__val warn">{{ reg1.quantidade_contada if reg1 else '—' }}</div>
+        </div>
+        <div>
+          <div class="pr-3col__lbl">2ª Contagem</div>
+          <div class="pr-3col__val danger">{{ reg2.quantidade_contada if reg2 else '—' }}</div>
+        </div>
+      </div>
+
+      <div class="pr-diff">
+        <span>Diferença</span>
+        <b class="{% if qtd_ref > item.quantidade_esperada %}ok{% else %}danger{% endif %}">
+          {{ '%+.0f' % (qtd_ref - item.quantidade_esperada) }} {{ item.produto.unidade }}
+        </b>
+      </div>
+
+      {% if current_user.perfil == 'admin' %}
+      <form action="{{ url_for('ajustar_divergencia') }}" method="POST" style="margin-top:4px;">
+        <input type="hidden" name="item_id" value="{{ item.id }}">
+        <input type="hidden" name="ciclo_id" value="{{ ciclo.id }}">
+        <label class="pr-field">
+          <span class="pr-field__label">Quantidade ajustada</span>
+          <input type="number" name="quantidade_ajustada" class="pr-input"
+                 step="0.01" min="0" required inputmode="decimal"
+                 value="{{ item.ajuste.quantidade_ajustada if item.ajuste else qtd_ref }}">
+        </label>
+        <label class="pr-field">
+          <span class="pr-field__label">Justificativa</span>
+          <textarea name="justificativa" class="pr-textarea" rows="2"
+                    placeholder="Ex: Produto recontado fisicamente, confirmado..." required>{{ item.ajuste.justificativa if item.ajuste else '' }}</textarea>
+        </label>
+        <button type="submit" class="pr-btn pr-btn--danger" style="width:100%;">
+          Registrar ajuste contábil
+        </button>
+      </form>
+      {% else %}
+      <div class="pr-banner pr-banner--info" style="margin-top:4px;margin-bottom:0;">
+        <span class="pr-banner__ic">ⓘ</span>
+        <div>Aguardando ajuste do administrador.</div>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

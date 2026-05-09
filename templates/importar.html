@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Importar movimentação — Prisma{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow"><a href="{{ url_for('dashboard') }}" style="color:inherit;text-decoration:none;">← Dashboard</a></div>
+      <h2 class="pr-h2">Importar movimentação</h2>
+    </div>
+  </div>
+
+  <div class="pr-card" style="margin-bottom:16px;">
+    <form method="POST" enctype="multipart/form-data" class="pr-form">
+      <label class="pr-field">
+        <span class="pr-field__label">Data de referência</span>
+        <input type="date" name="data_referencia" class="pr-input" required value="{{ today }}">
+        <span class="pr-field__hint">Data do estoque (geralmente o dia anterior)</span>
+      </label>
+      <label class="pr-field" style="margin-bottom:16px;">
+        <span class="pr-field__label">Arquivo Excel (.xlsx)</span>
+        <input type="file" name="arquivo" class="pr-input" accept=".xlsx,.xls" required
+               style="height:auto;padding:10px 14px;">
+      </label>
+      <button type="submit" class="pr-btn pr-btn--primary" style="width:100%;">
+        <i class="bi bi-cloud-upload"></i> Importar e criar lista
+      </button>
+    </form>
+  </div>
+
+  <div class="pr-infobox">
+    <div class="pr-infobox__title">
+      <i class="bi bi-info-circle" style="color:var(--prisma-blue);margin-right:6px;"></i>Formato esperado do Excel
+    </div>
+    <p style="font-size:13px;color:var(--fg-2);margin-bottom:12px;">O arquivo deve ter as seguintes colunas (1ª linha é o cabeçalho):</p>
+    <div style="overflow-x:auto;">
+      <table class="pr-table" style="border:1px solid var(--hairline);border-radius:var(--r-md);overflow:hidden;">
+        <thead>
+          <tr>
+            <th>Codigo</th>
+            <th>Descricao</th>
+            <th>Quantidade</th>
+            <th style="color:var(--fg-3);">Corredor *</th>
+            <th style="color:var(--fg-3);">Prateleira *</th>
+            <th style="color:var(--fg-3);">Unidade *</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">001</td>
+            <td>Caneta Azul</td>
+            <td class="r tnum">150</td>
+            <td class="muted">A</td>
+            <td class="muted">01</td>
+            <td class="muted">CX</td>
+          </tr>
+          <tr>
+            <td class="mono">002</td>
+            <td>Papel A4</td>
+            <td class="r tnum">300</td>
+            <td class="muted">B</td>
+            <td class="muted">03</td>
+            <td class="muted">RS</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:12px;color:var(--fg-3);margin-top:10px;margin-bottom:0;">
+      * Colunas opcionais. Se informadas, permitem filtrar a contagem por corredor/prateleira no celular.
+    </p>
+  </div>
+
+  <div style="margin-top:16px;">
+    <a href="{{ url_for('baixar_modelo') }}" class="pr-btn pr-btn--ghost pr-btn--sm">
+      <i class="bi bi-download"></i> Baixar modelo de planilha
+    </a>
+  </div>
+</div>
+{% endblock %}

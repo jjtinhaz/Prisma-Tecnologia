@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Relatório — {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow">Ciclo · {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}</div>
+      <h2 class="pr-h2">Relatório</h2>
+    </div>
+    <a href="{{ url_for('exportar', ciclo_id=ciclo.id) }}" class="pr-btn pr-btn--secondary pr-btn--sm">
+      <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+    </a>
+  </div>
+
+  {% set contados   = itens | selectattr('status','in',['contado','aprovado','ajustado']) | list | length %}
+  {% set divergentes= itens | selectattr('status','equalto','divergente') | list | length %}
+  {% set ajustados  = itens | selectattr('status','equalto','ajustado') | list | length %}
+  {% set pendentes  = itens | selectattr('status','equalto','pendente') | list | length %}
+  {% set total      = itens | length %}
+
+  <div class="pr-stats" style="margin-bottom:20px;">
+    <div class="pr-stat">
+      <div class="pr-stat__label">Total</div>
+      <div class="pr-stat__value">{{ total }}</div>
+    </div>
+    <div class="pr-stat pr-stat--success">
+      <div class="pr-stat__label">Sem divergência</div>
+      <div class="pr-stat__value">{{ contados }}</div>
+    </div>
+    <div class="pr-stat pr-stat--warning">
+      <div class="pr-stat__label">Ajustados</div>
+      <div class="pr-stat__value">{{ ajustados }}</div>
+    </div>
+    <div class="pr-stat {% if divergentes + pendentes > 0 %}pr-stat--warning{% endif %}">
+      <div class="pr-stat__label">Pendentes</div>
+      <div class="pr-stat__value">{{ divergentes + pendentes }}</div>
+    </div>
+  </div>
+
+  <div class="pr-card pr-tablecard">
+    <div style="overflow-x:auto;">
+      <table class="pr-table">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Descrição</th>
+            <th>Local</th>
+            <th class="r">Esperado</th>
+            <th class="r">Contado</th>
+            <th class="r">Diferença</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in itens %}
+          {% set reg1 = item.registros | selectattr('rodada','equalto',1) | list | first %}
+          {% set reg2 = item.registros | selectattr('rodada','equalto',2) | list | first %}
+          {% set qtd_final = item.ajuste.quantidade_ajustada if item.ajuste else (reg2.quantidade_contada if reg2 else (reg1.quantidade_contada if reg1 else None)) %}
+          {% set diff = (qtd_final - item.quantidade_esperada) if qtd_final is not none else none %}
+          <tr>
+            <td class="mono">{{ item.produto.codigo }}</td>
+            <td>{{ item.produto.descricao }}</td>
+            <td class="muted">{% if item.produto.corredor %}{{ item.produto.corredor }}{% if item.produto.prateleira %}/{{ item.produto.prateleira }}{% endif %}{% endif %}</td>
+            <td class="r tnum">{{ item.quantidade_esperada | int if item.quantidade_esperada == item.quantidade_esperada | int else item.quantidade_esperada }}</td>
+            <td class="r tnum">{{ qtd_final | int if qtd_final is not none and qtd_final == qtd_final | int else qtd_final or '—' }}</td>
+            <td class="r tnum {% if diff is not none %}{% if diff > 0 %}ok{% elif diff < 0 %}danger{% endif %}{% endif %}">
+              {% if diff is not none %}{{ '%+.0f' % diff }}{% else %}—{% endif %}
+            </td>
+            <td>
+              {% if item.status in ['contado','aprovado'] %}
+                <span class="pr-badge pr-badge--success"><span class="pr-badge__dot"></span>OK</span>
+              {% elif item.status == 'ajustado' %}
+                <span class="pr-badge pr-badge--warning"><span class="pr-badge__dot"></span>Ajustado</span>
+              {% elif item.status == 'divergente' %}
+                <span class="pr-badge pr-badge--danger"><span class="pr-badge__dot"></span>Divergente</span>
+              {% elif item.status == 'segunda_contagem' %}
+                <span class="pr-badge pr-badge--warning"><span class="pr-badge__dot"></span>2ª Cont.</span>
+              {% else %}
+                <span class="pr-badge pr-badge--neutral"><span class="pr-badge__dot"></span>Pendente</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

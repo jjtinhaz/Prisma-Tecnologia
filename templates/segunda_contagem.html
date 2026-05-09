@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}2ª Contagem — {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow">Ciclo · {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}</div>
+      <h2 class="pr-h2">2ª Contagem</h2>
+    </div>
+    <span class="pr-badge pr-badge--warning"><span class="pr-badge__dot"></span>{{ itens|length }} itens</span>
+  </div>
+
+  <div class="pr-banner pr-banner--warning" style="margin-bottom:20px;">
+    <span class="pr-banner__ic">!</span>
+    <div>Estes itens tiveram divergência na 1ª contagem. Confira novamente com cuidado.</div>
+  </div>
+
+  {% if not itens %}
+  <div class="pr-banner pr-banner--success">
+    <span class="pr-banner__ic">✓</span>
+    <div>Todos os itens da 2ª contagem foram verificados.</div>
+  </div>
+  {% endif %}
+
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    {% for item in itens %}
+    {% set reg1 = item.registros | selectattr('rodada','equalto',1) | list | first %}
+    {% set reg2 = item.registros | selectattr('rodada','equalto',2) | list | first %}
+
+    <div class="pr-card pr-item--divergent">
+      <div class="pr-item__head">
+        <div class="pr-item__head-right">
+          <span class="pr-code">{{ item.produto.codigo }}</span>
+          {% if item.produto.corredor %}
+          <span class="pr-loc">
+            <i class="bi bi-geo-alt" style="font-size:11px;"></i>
+            {{ item.produto.corredor }}{% if item.produto.prateleira %}/{{ item.produto.prateleira }}{% endif %}
+          </span>
+          {% endif %}
+        </div>
+        <span class="pr-badge pr-badge--warning"><span class="pr-badge__dot"></span>2ª Contagem</span>
+      </div>
+
+      <div class="pr-item__title">{{ item.produto.descricao }}</div>
+
+      <div class="pr-3col">
+        <div>
+          <div class="pr-3col__lbl">Esperado</div>
+          <div class="pr-3col__val">{{ item.quantidade_esperada | int if item.quantidade_esperada == item.quantidade_esperada | int else item.quantidade_esperada }}</div>
+        </div>
+        <div>
+          <div class="pr-3col__lbl">1ª Contagem</div>
+          <div class="pr-3col__val danger">
+            {{ reg1.quantidade_contada if reg1 else '—' }}
+            {% if reg1 %}<div style="font-size:10px;color:var(--fg-3);font-weight:400;margin-top:2px;">{{ reg1.usuario.nome }}</div>{% endif %}
+          </div>
+        </div>
+        <div>
+          <div class="pr-3col__lbl">2ª Contagem</div>
+          <div class="pr-3col__val {% if reg2 %}ok{% endif %}">
+            {{ reg2.quantidade_contada if reg2 else '—' }}
+            {% if reg2 %}<div style="font-size:10px;color:var(--fg-3);font-weight:400;margin-top:2px;">{{ reg2.usuario.nome }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <form action="{{ url_for('registrar_segunda_contagem') }}" method="POST" class="pr-item__form">
+        <input type="hidden" name="item_id" value="{{ item.id }}">
+        <input type="hidden" name="ciclo_id" value="{{ ciclo.id }}">
+        <input type="number" name="quantidade" class="pr-input pr-input--qty"
+               placeholder="2ª qtd" step="0.01" min="0" required
+               value="{{ reg2.quantidade_contada if reg2 else '' }}"
+               inputmode="decimal">
+        <button type="submit" class="pr-btn pr-btn--primary" style="flex-shrink:0;width:52px;padding:0;">
+          <i class="bi bi-check2" style="font-size:18px;"></i>
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

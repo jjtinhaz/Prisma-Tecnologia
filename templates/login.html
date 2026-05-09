@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entrar — Prisma</title>
+  <link href="{{ url_for('static', filename='css/custom.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="pr-login">
+  <div class="pr-login__card">
+    <div class="pr-login__brand">
+      <svg viewBox="0 0 80 56" fill="none" stroke="#0B1F3A" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" width="72" height="50">
+        <path d="M16 42 L36 12 L56 42 Z"/>
+        <path d="M0 30 L26 30"/>
+        <path d="M48 22 L76 18" stroke="#0A84FF"/>
+        <path d="M48 30 L76 30" stroke="#0A84FF" opacity="0.7"/>
+        <path d="M48 38 L76 42" stroke="#0A84FF" opacity="0.45"/>
+      </svg>
+      <h1 class="pr-login__title">Prisma</h1>
+      <p class="pr-login__sub">Contagem de estoque</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="pr-banner pr-banner--{% if category in ['danger','error'] %}danger{% elif category == 'success' %}success{% elif category == 'warning' %}warning{% else %}info{% endif %}">
+            <span class="pr-banner__ic">{% if category == 'success' %}✓{% elif category in ['danger','error'] %}✕{% elif category == 'warning' %}!{% else %}ⓘ{% endif %}</span>
+            <div>{{ message }}</div>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" autocomplete="on" class="pr-form">
+      <label class="pr-field">
+        <span class="pr-field__label">Email</span>
+        <input type="email" name="email" class="pr-input" placeholder="seu@email.com" required autofocus autocomplete="username">
+      </label>
+      <label class="pr-field">
+        <span class="pr-field__label">Senha</span>
+        <input type="password" name="senha" class="pr-input" placeholder="••••••••" required autocomplete="current-password">
+      </label>
+      <button type="submit" class="pr-btn pr-btn--primary pr-btn--lg" style="width:100%;margin-top:8px;">
+        Entrar
+      </button>
+    </form>
+  </div>
+</div>
+</body>
+</html>
