@@ -19,5 +19,7 @@ uploads/
 .env
 .env.local
 
-# Netlify (artefatos de build)
-netlify/functions/*.pyc
+# Netlify - artefatos de build (copiados pelo build command, nao commitar)
+netlify/functions/*
+!netlify/functions/server.py
+!netlify/functions/requirements.txt
