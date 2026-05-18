@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+venv/
+env/
+.venv/
+
+# Database
+instance/
+*.db
+
+# Uploads e arquivos de teste
+uploads/
+*.xlsx
+
+# Ambiente local
+.env
+.env.local
+
+# Netlify (artefatos de build)
+netlify/functions/*.pyc

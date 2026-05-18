@@ -1,5 +1,7 @@
 import os
 import io
+from dotenv import load_dotenv
+load_dotenv()
 from datetime import date, datetime
 from flask import Flask, render_template, redirect, url_for, request, flash, send_file, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
@@ -8,8 +10,12 @@ import pandas as pd
 from models import db, Empresa, Usuario, Produto, CicloContagem, ItemCiclo, RegistroContagem, AjusteDivergencia
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'chave-secreta-estoque-2024'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///estoque.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-secreta-estoque-2024')
+
+_db_url = os.environ.get('DATABASE_URL', 'sqlite:///estoque.db')
+if _db_url.startswith('postgres://'):
+    _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 

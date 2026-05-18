@@ -1,0 +1,11 @@
+[build]
+  functions = "netlify/functions"
+  publish   = "public"
+
+[build.environment]
+  PYTHON_VERSION = "3.11"
+
+[[redirects]]
+  from   = "/*"
+  to     = "/.netlify/functions/server"
+  status = 200
