@@ -8,7 +8,7 @@
       <div class="pr-eyebrow">{{ current_user.empresa.nome }}</div>
       <h2 class="pr-h2">Dashboard</h2>
     </div>
-    {% if current_user.perfil == 'admin' %}
+    {% if current_user.perfil in ['admin', 'gerente'] %}
     <a href="{{ url_for('importar') }}" class="pr-btn pr-btn--secondary pr-btn--sm">
       <i class="bi bi-upload"></i> Novo ciclo
     </a>
@@ -21,6 +21,28 @@
   {% set divergentes= ciclo_ativo.itens|selectattr('status','equalto','divergente')|list|length %}
   {% set segunda    = ciclo_ativo.itens|selectattr('status','equalto','segunda_contagem')|list|length %}
   {% set pendentes  = ciclo_ativo.itens|selectattr('status','equalto','pendente')|list|length %}
+
+  {# ── Banners de handoff ── #}
+  {% if pendentes == 0 and divergentes > 0 and segunda == 0 and current_user.perfil in ['admin', 'lider', 'gerente'] %}
+  <div class="pr-banner pr-banner--info" style="margin-bottom:12px;">
+    <span class="pr-banner__ic">i</span>
+    <div>
+      <b>1ª contagem concluída.</b> Há {{ divergentes }} divergência(s) prontas para 2ª contagem.
+      Clique em <b>Gerar 2ª Contagem</b> para iniciar a verificação.
+    </div>
+  </div>
+  {% endif %}
+
+  {% if segunda == 0 and divergentes > 0 and pendentes == 0 and current_user.perfil in ['admin', 'gerente'] %}
+  {# divergentes aqui = itens que voltaram de divergente após 2ª contagem #}
+  {% endif %}
+
+  {% if segunda == 0 and divergentes == 0 and pendentes == 0 and contados < total and current_user.perfil in ['admin', 'gerente'] %}
+  <div class="pr-banner pr-banner--success" style="margin-bottom:12px;">
+    <span class="pr-banner__ic">✓</span>
+    <div><b>2ª contagem concluída.</b> Revise os ajustes de divergência antes de fechar o ciclo.</div>
+  </div>
+  {% endif %}
 
   <div class="pr-card" style="margin-bottom:8px;">
     <div class="pr-cycle__head">
@@ -44,7 +66,7 @@
         <div class="pr-stat__label">Divergências</div>
         <div class="pr-stat__value">{{ divergentes + segunda }}</div>
       </div>
-      <div class="pr-stat">
+      <div class="pr-stat {% if pendentes > 0 %}pr-stat--warning{% endif %}">
         <div class="pr-stat__label">Pendentes</div>
         <div class="pr-stat__value">{{ pendentes }}</div>
       </div>
@@ -58,33 +80,52 @@
     {% endif %}
 
     <div class="pr-actions">
+      {% if current_user.perfil in ['admin', 'estoquista', 'lider', 'gerente'] and pendentes > 0 %}
       <a href="{{ url_for('contagem', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--primary">
-        Ir para contagem
-      </a>
-      {% if segunda > 0 %}
-      <a href="{{ url_for('segunda_contagem', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--secondary">
-        2ª Contagem ({{ segunda }})
+        <i class="bi bi-list-check"></i> 1ª Contagem
       </a>
       {% endif %}
-      {% if divergentes > 0 %}
-      <a href="{{ url_for('divergencias', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--ghost">
-        Divergências ({{ divergentes }})
+
+      {% if segunda > 0 and current_user.perfil in ['admin', 'lider', 'gerente'] %}
+      <a href="{{ url_for('segunda_contagem', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--primary">
+        <i class="bi bi-arrow-repeat"></i> 2ª Contagem ({{ segunda }})
       </a>
       {% endif %}
-      {% if divergentes > 0 and current_user.perfil == 'admin' %}
+
+      {% if current_user.perfil in ['admin', 'lider', 'gerente'] and divergentes > 0 and pendentes == 0 %}
       <form action="{{ url_for('gerar_segunda_contagem', ciclo_id=ciclo_ativo.id) }}" method="POST" style="display:contents;">
         <button class="pr-btn pr-btn--secondary">
-          Gerar 2ª Contagem
+          <i class="bi bi-arrow-clockwise"></i> Gerar 2ª Contagem
+        </button>
+      </form>
+      {% elif current_user.perfil in ['admin', 'lider', 'gerente'] and divergentes > 0 and pendentes > 0 %}
+      <button class="pr-btn pr-btn--secondary" disabled title="Aguarde todas as 1ªs contagens serem concluídas">
+        <i class="bi bi-arrow-clockwise"></i> Gerar 2ª Contagem
+      </button>
+      {% endif %}
+
+      {% if current_user.perfil in ['admin', 'gerente'] and divergentes > 0 %}
+      <a href="{{ url_for('divergencias', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--ghost">
+        <i class="bi bi-exclamation-triangle"></i> Divergências ({{ divergentes }})
+      </a>
+      {% endif %}
+
+      <a href="{{ url_for('relatorio', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--ghost">
+        <i class="bi bi-bar-chart"></i> Relatório
+      </a>
+
+      {% if current_user.perfil == 'admin' and pendentes == 0 and divergentes == 0 and segunda == 0 %}
+      <form action="{{ url_for('fechar_ciclo', ciclo_id=ciclo_ativo.id) }}" method="POST" style="display:contents;">
+        <button class="pr-btn pr-btn--secondary" onclick="return confirm('Fechar este ciclo? Esta ação não pode ser desfeita.')">
+          <i class="bi bi-lock"></i> Fechar ciclo
         </button>
       </form>
       {% endif %}
-      <a href="{{ url_for('relatorio', ciclo_id=ciclo_ativo.id) }}" class="pr-btn pr-btn--ghost">
-        Ver relatório
-      </a>
-      {% if current_user.perfil == 'admin' and pendentes == 0 and divergentes == 0 and segunda == 0 %}
-      <form action="{{ url_for('fechar_ciclo', ciclo_id=ciclo_ativo.id) }}" method="POST" style="display:contents;">
-        <button class="pr-btn pr-btn--primary" onclick="return confirm('Fechar este ciclo?')">
-          Fechar ciclo
+
+      {% if current_user.perfil == 'admin' %}
+      <form action="{{ url_for('deletar_ciclo', ciclo_id=ciclo_ativo.id) }}" method="POST" style="display:contents;">
+        <button class="pr-btn pr-btn--danger" onclick="return confirm('Deletar este ciclo e todos os registros? Esta ação é irreversível.')">
+          <i class="bi bi-trash"></i>
         </button>
       </form>
       {% endif %}
@@ -93,9 +134,9 @@
 
   {% else %}
   <div class="pr-banner pr-banner--info">
-    <span class="pr-banner__ic">ⓘ</span>
+    <span class="pr-banner__ic">i</span>
     <div>Nenhum ciclo ativo.
-      {% if current_user.perfil == 'admin' %}
+      {% if current_user.perfil in ['admin', 'gerente'] %}
       <a href="{{ url_for('importar') }}" style="color:inherit;font-weight:600;text-decoration:underline;">Importe uma movimentação</a> para iniciar.
       {% endif %}
     </div>
@@ -121,11 +162,20 @@
         <a href="{{ url_for('relatorio', ciclo_id=ciclo.id) }}" class="pr-iconbtn" title="Ver relatório">
           <i class="bi bi-chevron-right" style="font-size:13px;"></i>
         </a>
+        {% if current_user.perfil == 'admin' and ciclo.status != 'fechado' %}
+        <form action="{{ url_for('deletar_ciclo', ciclo_id=ciclo.id) }}" method="POST" style="display:contents;">
+          <button type="submit" class="pr-iconbtn" title="Deletar ciclo"
+                  onclick="return confirm('Deletar este ciclo?')"
+                  style="color:var(--danger);">
+            <i class="bi bi-trash" style="font-size:13px;"></i>
+          </button>
+        </form>
+        {% endif %}
       </div>
     </div>
     {% endif %}
     {% else %}
-    <div style="text-align:center;color:var(--fg-3);padding:32px 0;font-size:14px;">Nenhum ciclo anterior.</div>
+    <div style="text-align:center;color:var(--fg-3);padding:32px 0;font-size:14px;font-family:var(--font-mono);">Nenhum ciclo anterior.</div>
     {% endfor %}
   </div>
 </div>

@@ -16,21 +16,24 @@
       <svg class="pr-mark" viewBox="0 0 80 56" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round">
         <path d="M16 42 L36 12 L56 42 Z"/>
         <path d="M0 30 L26 30"/>
-        <path d="M48 22 L76 18" stroke="#0A84FF"/>
-        <path d="M48 30 L76 30" stroke="#0A84FF" opacity="0.7"/>
-        <path d="M48 38 L76 42" stroke="#0A84FF" opacity="0.45"/>
+        <path d="M48 22 L76 18" stroke="#00D4FF"/>
+        <path d="M48 30 L76 30" stroke="#00D4FF" opacity="0.7"/>
+        <path d="M48 38 L76 42" stroke="#00D4FF" opacity="0.45"/>
       </svg>
-      <a href="{{ url_for('dashboard') }}" class="pr-nav__title">Prisma</a>
+      <a href="{{ url_for('dashboard') }}" class="pr-nav__title">PRISMA</a>
     </div>
     <div class="pr-nav__right">
-      <span class="d-none d-sm-inline">{{ current_user.nome }}</span>
+      <div class="pr-nav__user">
+        <span style="color:var(--fg-2);">{{ current_user.nome }}</span>
+        <span class="pr-nav__role">{{ perfil_labels.get(current_user.perfil, current_user.perfil) }}</span>
+      </div>
       {% if current_user.perfil == 'admin' %}
       <a href="{{ url_for('admin') }}" class="pr-iconbtn pr-iconbtn--dark" title="Administração">
-        <i class="bi bi-gear" style="font-size:15px;"></i>
+        <i class="bi bi-gear" style="font-size:14px;"></i>
       </a>
       {% endif %}
       <a href="{{ url_for('logout') }}" class="pr-iconbtn pr-iconbtn--dark" title="Sair">
-        <i class="bi bi-box-arrow-right" style="font-size:15px;"></i>
+        <i class="bi bi-box-arrow-right" style="font-size:14px;"></i>
       </a>
     </div>
   </div>
@@ -43,7 +46,7 @@
       <div class="pr-container" style="padding-bottom:0;padding-top:16px;">
         {% for category, message in messages %}
           <div class="pr-banner pr-banner--{% if category in ['danger','error'] %}danger{% elif category == 'success' %}success{% elif category == 'warning' %}warning{% else %}info{% endif %}">
-            <span class="pr-banner__ic">{% if category == 'success' %}✓{% elif category in ['danger','error'] %}✕{% elif category == 'warning' %}!{% else %}ⓘ{% endif %}</span>
+            <span class="pr-banner__ic">{% if category == 'success' %}✓{% elif category in ['danger','error'] %}✕{% elif category == 'warning' %}!{% else %}i{% endif %}</span>
             <div>{{ message }}</div>
           </div>
         {% endfor %}

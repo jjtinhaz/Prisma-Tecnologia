@@ -8,12 +8,27 @@
       <div class="pr-eyebrow">Ciclo · {{ ciclo.data_referencia.strftime('%d/%m/%Y') }}</div>
       <h2 class="pr-h2">2ª Contagem</h2>
     </div>
-    <span class="pr-badge pr-badge--warning"><span class="pr-badge__dot"></span>{{ itens|length }} itens</span>
+    <span class="pr-badge pr-badge--warning">
+      <span class="pr-badge__dot"></span>
+      <span id="total-count">{{ itens|length }}</span> pendentes
+    </span>
   </div>
 
   <div class="pr-banner pr-banner--warning" style="margin-bottom:20px;">
     <span class="pr-banner__ic">!</span>
-    <div>Estes itens tiveram divergência na 1ª contagem. Confira novamente com cuidado.</div>
+    <div>Estes itens tiveram divergência na 1ª contagem. Confira com atenção.</div>
+  </div>
+
+  <div style="margin-bottom:12px;">
+    <input type="text" id="busca-item" class="pr-input" placeholder="Buscar por código ou descrição..."
+           autocomplete="off" style="height:36px;font-size:13px;">
+  </div>
+
+  <div id="banner-todos" style="display:none;">
+    <div class="pr-banner pr-banner--success">
+      <span class="pr-banner__ic">✓</span>
+      <div>Todos os itens da 2ª contagem foram verificados.</div>
+    </div>
   </div>
 
   {% if not itens %}
@@ -23,12 +38,12 @@
   </div>
   {% endif %}
 
-  <div style="display:flex;flex-direction:column;gap:10px;">
+  <div style="display:flex;flex-direction:column;gap:10px;" id="lista-itens">
     {% for item in itens %}
     {% set reg1 = item.registros | selectattr('rodada','equalto',1) | list | first %}
-    {% set reg2 = item.registros | selectattr('rodada','equalto',2) | list | first %}
 
-    <div class="pr-card pr-item--divergent">
+    <div class="pr-card pr-item" data-item-id="{{ item.id }}" style="border-left:3px solid var(--warning);border-color:rgba(227,179,65,.25);border-left-color:var(--warning);">
+
       <div class="pr-item__head">
         <div class="pr-item__head-right">
           <span class="pr-code">{{ item.produto.codigo }}</span>
@@ -44,6 +59,7 @@
 
       <div class="pr-item__title">{{ item.produto.descricao }}</div>
 
+      {% if current_user.perfil in ['admin', 'gerente'] %}
       <div class="pr-3col">
         <div>
           <div class="pr-3col__lbl">Esperado</div>
@@ -52,27 +68,41 @@
         <div>
           <div class="pr-3col__lbl">1ª Contagem</div>
           <div class="pr-3col__val danger">
-            {{ reg1.quantidade_contada if reg1 else '—' }}
+            {{ reg1.quantidade_contada | int if reg1 and reg1.quantidade_contada == reg1.quantidade_contada | int else (reg1.quantidade_contada if reg1 else '—') }}
             {% if reg1 %}<div style="font-size:10px;color:var(--fg-3);font-weight:400;margin-top:2px;">{{ reg1.usuario.nome }}</div>{% endif %}
           </div>
         </div>
         <div>
           <div class="pr-3col__lbl">2ª Contagem</div>
-          <div class="pr-3col__val {% if reg2 %}ok{% endif %}">
-            {{ reg2.quantidade_contada if reg2 else '—' }}
-            {% if reg2 %}<div style="font-size:10px;color:var(--fg-3);font-weight:400;margin-top:2px;">{{ reg2.usuario.nome }}</div>{% endif %}
-          </div>
+          <div class="pr-3col__val" style="color:var(--fg-3);">—</div>
         </div>
       </div>
+      {% else %}
+      <div class="pr-3col" style="grid-template-columns:1fr 1fr;">
+        <div>
+          <div class="pr-3col__lbl">1ª Contagem</div>
+          <div class="pr-3col__val danger">
+            {{ reg1.quantidade_contada | int if reg1 and reg1.quantidade_contada == reg1.quantidade_contada | int else (reg1.quantidade_contada if reg1 else '—') }}
+            {% if reg1 %}<div style="font-size:10px;color:var(--fg-3);font-weight:400;margin-top:2px;">{{ reg1.usuario.nome }}</div>{% endif %}
+          </div>
+        </div>
+        <div>
+          <div class="pr-3col__lbl">2ª Contagem</div>
+          <div class="pr-3col__val" style="color:var(--fg-3);">—</div>
+        </div>
+      </div>
+      {% endif %}
 
-      <form action="{{ url_for('registrar_segunda_contagem') }}" method="POST" class="pr-item__form">
+      <form class="pr-item__form" action="{{ url_for('registrar_segunda_contagem') }}" method="POST">
         <input type="hidden" name="item_id" value="{{ item.id }}">
         <input type="hidden" name="ciclo_id" value="{{ ciclo.id }}">
+        {% set und = item.produto.unidade|upper %}
         <input type="number" name="quantidade" class="pr-input pr-input--qty"
-               placeholder="2ª qtd" step="0.01" min="0" required
-               value="{{ reg2.quantidade_contada if reg2 else '' }}"
-               inputmode="decimal">
-        <button type="submit" class="pr-btn pr-btn--primary" style="flex-shrink:0;width:52px;padding:0;">
+               placeholder="2ª qtd"
+               step="{{ '1' if und in ['UN','CX','PC','PÇ','PCT','PAR','PECA','PECAS','PEÇAS','UD'] else '0.01' }}"
+               min="0" required
+               inputmode="{{ 'numeric' if und in ['UN','CX','PC','PÇ','PCT','PAR','PECA','PECAS','PEÇAS','UD'] else 'decimal' }}">
+        <button type="submit" class="pr-btn pr-btn--primary pr-item__submit" style="flex-shrink:0;width:52px;padding:0;">
           <i class="bi bi-check2" style="font-size:18px;"></i>
         </button>
       </form>
@@ -80,4 +110,86 @@
     {% endfor %}
   </div>
 </div>
+
+<script>
+(function () {
+  var restantes = {{ itens|length }};
+
+  function removerCard(card) {
+    card.style.transition = 'opacity 220ms ease, transform 220ms ease';
+    card.style.opacity = '0';
+    card.style.transform = 'translateX(10px)';
+    setTimeout(function () {
+      card.style.transition = 'max-height 280ms ease-out, padding 280ms ease-out, margin 280ms ease-out';
+      card.style.overflow = 'hidden';
+      card.style.maxHeight = card.offsetHeight + 'px';
+      card.style.margin = '0';
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          card.style.maxHeight = '0';
+          card.style.paddingTop = '0';
+          card.style.paddingBottom = '0';
+        });
+      });
+      setTimeout(function () { card.remove(); }, 290);
+    }, 230);
+  }
+
+  var buscaInput = document.getElementById('busca-item');
+  if (buscaInput) {
+    buscaInput.addEventListener('input', function () {
+      var q = this.value.toLowerCase().trim();
+      document.querySelectorAll('.pr-item').forEach(function (card) {
+        var codigo = (card.querySelector('.pr-code') || {}).textContent || '';
+        var titulo = (card.querySelector('.pr-item__title') || {}).textContent || '';
+        card.style.display = (!q || codigo.toLowerCase().includes(q) || titulo.toLowerCase().includes(q)) ? '' : 'none';
+      });
+    });
+  }
+
+  document.querySelectorAll('.pr-item__form').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      var card = form.closest('.pr-item');
+      var btn = form.querySelector('.pr-item__submit');
+      var input = form.querySelector('input[name="quantidade"]');
+
+      if (!input.value || parseFloat(input.value) < 0) return;
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split" style="font-size:16px;"></i>';
+
+      fetch(form.action, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: new FormData(form)
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (json) {
+          if (!json.ok) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check2" style="font-size:18px;"></i>';
+            return;
+          }
+
+          btn.innerHTML = '<i class="bi bi-check2-circle" style="font-size:18px;color:#3FB950;"></i>';
+
+          setTimeout(function () {
+            removerCard(card);
+            restantes--;
+            document.getElementById('total-count').textContent = restantes;
+            if (restantes <= 0) {
+              document.getElementById('banner-todos').style.display = '';
+            }
+          }, 400);
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-check2" style="font-size:18px;"></i>';
+        });
+    });
+  });
+})();
+</script>
 {% endblock %}

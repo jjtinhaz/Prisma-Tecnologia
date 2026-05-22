@@ -11,34 +11,55 @@
   </div>
 
   <div class="pr-card" style="margin-bottom:16px;padding:0;overflow:hidden;">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--hairline);display:flex;align-items:center;gap:8px;">
-      <i class="bi bi-people" style="color:var(--fg-2);"></i>
-      <span style="font-weight:600;font-size:15px;">Usuários — {{ current_user.empresa.nome }}</span>
+    <div style="padding:14px 20px;border-bottom:1px solid var(--hairline);display:flex;align-items:center;gap:8px;">
+      <i class="bi bi-people" style="color:var(--fg-3);font-size:14px;"></i>
+      <span style="font-weight:600;font-size:14px;">Usuários · {{ current_user.empresa.nome }}</span>
     </div>
     <div>
       {% for u in usuarios %}
-      <div class="pr-list__row" style="border-radius:0;margin-bottom:0;border-bottom:1px solid var(--hairline);">
-        <div>
-          <div class="pr-list__title">{{ u.nome }}</div>
-          <div class="pr-list__sub">
+      <div style="padding:12px 20px;{% if not loop.last %}border-bottom:1px solid var(--hairline);{% endif %}display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div style="min-width:0;">
+          <div style="font-weight:600;font-size:14px;color:var(--fg-1);">{{ u.nome }}</div>
+          <div style="font-size:11px;color:var(--fg-3);margin-top:3px;font-family:var(--font-mono);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             {{ u.email }}
-            &nbsp;·&nbsp;
-            <span class="pr-badge {% if u.perfil == 'admin' %}pr-badge--info{% else %}pr-badge--neutral{% endif %}" style="height:18px;font-size:11px;">
-              {{ u.perfil }}
+            <span class="pr-badge
+              {% if u.perfil == 'admin' %}pr-badge--danger
+              {% elif u.perfil == 'gerente' %}pr-badge--warning
+              {% elif u.perfil == 'lider' %}pr-badge--info
+              {% else %}pr-badge--neutral{% endif %}">
+              {{ perfil_labels.get(u.perfil, u.perfil) }}
             </span>
+            {% if u.deve_trocar_senha %}
+            <span class="pr-badge pr-badge--warning" title="Aguardando definição de senha">senha temp.</span>
+            {% endif %}
+            {% if not u.ativo %}
+            <span class="pr-badge pr-badge--neutral">inativo</span>
+            {% endif %}
           </div>
         </div>
-        <form action="{{ url_for('toggle_usuario', uid=u.id) }}" method="POST">
-          <button type="submit"
-                  class="pr-btn pr-btn--sm {% if u.ativo %}pr-btn--ghost{% else %}pr-btn--secondary{% endif %}"
-                  {% if u.id == current_user.id %}disabled{% endif %}>
-            {% if u.ativo %}
-              <i class="bi bi-person-x"></i> Desativar
-            {% else %}
-              <i class="bi bi-person-check"></i> Ativar
-            {% endif %}
-          </button>
-        </form>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <a href="{{ url_for('editar_usuario', uid=u.id) }}" class="pr-btn pr-btn--sm pr-btn--secondary">
+            <i class="bi bi-pencil"></i> Editar
+          </a>
+          <form action="{{ url_for('resetar_senha', uid=u.id) }}" method="POST" style="display:contents;">
+            <button type="submit" class="pr-btn pr-btn--sm pr-btn--ghost"
+                    onclick="return confirm('Resetar senha de {{ u.nome }} para 123456?')"
+                    {% if u.id == current_user.id %}disabled{% endif %}>
+              <i class="bi bi-key"></i> Resetar senha
+            </button>
+          </form>
+          <form action="{{ url_for('toggle_usuario', uid=u.id) }}" method="POST" style="display:contents;">
+            <button type="submit"
+                    class="pr-btn pr-btn--sm {% if u.ativo %}pr-btn--danger{% else %}pr-btn--secondary{% endif %}"
+                    {% if u.id == current_user.id %}disabled{% endif %}>
+              {% if u.ativo %}
+                <i class="bi bi-person-x"></i>
+              {% else %}
+                <i class="bi bi-person-check"></i>
+              {% endif %}
+            </button>
+          </form>
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -46,8 +67,8 @@
 
   <div class="pr-card">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-      <i class="bi bi-person-plus" style="color:var(--fg-2);"></i>
-      <span style="font-weight:600;font-size:15px;">Novo usuário</span>
+      <i class="bi bi-person-plus" style="color:var(--fg-3);font-size:14px;"></i>
+      <span style="font-weight:600;font-size:14px;">Novo usuário</span>
     </div>
     <form method="POST" action="{{ url_for('novo_usuario') }}" class="pr-form">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -60,17 +81,29 @@
           <input type="email" name="email" class="pr-input" required placeholder="email@empresa.com">
         </label>
         <label class="pr-field" style="margin-bottom:0;">
-          <span class="pr-field__label">Senha</span>
-          <input type="password" name="senha" class="pr-input" required minlength="6" placeholder="Mínimo 6 caracteres">
-        </label>
-        <label class="pr-field" style="margin-bottom:0;">
           <span class="pr-field__label">Perfil</span>
           <select name="perfil" class="pr-select">
-            <option value="contador">Contador</option>
+            <option value="estoquista">Estoquista</option>
+            <option value="lider">Líder do Estoque</option>
+            <option value="gerente">Gerente</option>
             <option value="admin">Administrador</option>
           </select>
         </label>
       </div>
+
+      <div class="pr-infobox" style="margin-top:16px;">
+        <div class="pr-infobox__title">Permissões por perfil</div>
+        <div style="display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--fg-2);font-family:var(--font-mono);">
+          <div><span style="color:var(--fg-1);">Estoquista</span> · 1ª contagem</div>
+          <div><span style="color:var(--info);">Líder</span> · 1ª e 2ª contagem + gerar 2ª</div>
+          <div><span style="color:var(--warning);">Gerente</span> · tudo acima + divergências + importar</div>
+          <div><span style="color:var(--danger);">Admin</span> · acesso total + gestão de usuários</div>
+          <div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--hairline);color:var(--fg-3);">
+            Senha inicial: <b style="color:var(--warning);">123456</b> · usuário define nova senha no 1º acesso
+          </div>
+        </div>
+      </div>
+
       <button type="submit" class="pr-btn pr-btn--primary" style="width:100%;margin-top:16px;">
         <i class="bi bi-person-plus"></i> Criar usuário
       </button>

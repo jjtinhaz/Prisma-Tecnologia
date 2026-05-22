@@ -31,6 +31,14 @@ def load_user(user_id):
     return Usuario.query.get(int(user_id))
 
 
+PERFIL_LABELS = {
+    'admin':      'Admin',
+    'gerente':    'Gerente',
+    'lider':      'Líder',
+    'estoquista': 'Estoquista',
+}
+
+
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -41,7 +49,40 @@ def admin_required(f):
     return decorated
 
 
+UNIDADES_INTEIRAS = {'UN', 'CX', 'PC', 'PÇ', 'PCT', 'PAR', 'PECA', 'PECAS', 'PEÇAS', 'UD'}
+
+
+def validar_quantidade(quantidade, unidade):
+    if quantidade < 0:
+        return False, 'Quantidade não pode ser negativa.'
+    if (unidade or '').upper().strip() in UNIDADES_INTEIRAS and quantidade != int(quantidade):
+        return False, f'A unidade {unidade} não aceita decimais.'
+    return True, None
+
+
+def requer_perfil(*perfis):
+    """Permite acesso a admin + qualquer perfil listado."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return redirect(url_for('login'))
+            if current_user.perfil != 'admin' and current_user.perfil not in perfis:
+                flash('Você não tem permissão para acessar esta página.', 'danger')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
+
 # ── AUTH ──────────────────────────────────────────────────────────────────────
+
+@app.before_request
+def verificar_troca_senha():
+    if current_user.is_authenticated and getattr(current_user, 'deve_trocar_senha', False):
+        if request.endpoint not in ('trocar_senha', 'logout', 'static'):
+            return redirect(url_for('trocar_senha'))
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -53,6 +94,8 @@ def login():
         usuario = Usuario.query.filter_by(email=email, ativo=True).first()
         if usuario and usuario.check_senha(senha):
             login_user(usuario, remember=True)
+            if usuario.deve_trocar_senha:
+                return redirect(url_for('trocar_senha'))
             return redirect(url_for('dashboard'))
         flash('Email ou senha incorretos.', 'danger')
     return render_template('login.html')
@@ -63,6 +106,29 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for('login'))
+
+
+@app.route('/trocar-senha', methods=['GET', 'POST'])
+@login_required
+def trocar_senha():
+    if request.method == 'POST':
+        nova = request.form.get('nova_senha', '').strip()
+        confirmar = request.form.get('confirmar_senha', '').strip()
+        if len(nova) < 6:
+            flash('A senha deve ter pelo menos 6 caracteres.', 'warning')
+            return redirect(url_for('trocar_senha'))
+        if nova != confirmar:
+            flash('As senhas não coincidem.', 'warning')
+            return redirect(url_for('trocar_senha'))
+        if nova == '123456':
+            flash('Escolha uma senha diferente da senha padrão.', 'warning')
+            return redirect(url_for('trocar_senha'))
+        current_user.set_senha(nova)
+        current_user.deve_trocar_senha = False
+        db.session.commit()
+        flash('Senha definida com sucesso. Bem-vindo!', 'success')
+        return redirect(url_for('dashboard'))
+    return render_template('trocar_senha.html')
 
 
 # ── DASHBOARD ─────────────────────────────────────────────────────────────────
@@ -83,7 +149,7 @@ def dashboard():
 
 @app.route('/importar', methods=['GET', 'POST'])
 @login_required
-@admin_required
+@requer_perfil('gerente')
 def importar():
     if request.method == 'POST':
         arquivo = request.files.get('arquivo')
@@ -179,7 +245,7 @@ def importar():
 
 @app.route('/modelo-excel')
 @login_required
-@admin_required
+@requer_perfil('gerente')
 def baixar_modelo():
     rows = [
         {'Codigo': '001', 'Descricao': 'Produto Exemplo A', 'Quantidade': 100,
@@ -200,6 +266,7 @@ def baixar_modelo():
 
 @app.route('/contagem/<int:ciclo_id>')
 @login_required
+@requer_perfil('estoquista', 'lider', 'gerente')
 def contagem(ciclo_id):
     ciclo = CicloContagem.query.filter_by(
         id=ciclo_id, empresa_id=current_user.empresa_id
@@ -207,28 +274,35 @@ def contagem(ciclo_id):
     filtro_corredor = request.args.get('corredor', '')
     query = ItemCiclo.query.filter(
         ItemCiclo.ciclo_id == ciclo_id,
-        ItemCiclo.status.in_(['pendente', 'contado', 'divergente'])
+        ItemCiclo.status == 'pendente'
     )
     if filtro_corredor:
         query = query.join(Produto).filter(Produto.corredor == filtro_corredor)
     itens = query.all()
     corredores = db.session.query(Produto.corredor).join(ItemCiclo).filter(
         ItemCiclo.ciclo_id == ciclo_id,
+        ItemCiclo.status == 'pendente',
         Produto.corredor.isnot(None)
     ).distinct().all()
     corredores = [c[0] for c in corredores if c[0]]
+    total_ciclo = ItemCiclo.query.filter_by(ciclo_id=ciclo_id).count()
     return render_template('contagem.html', ciclo=ciclo, itens=itens,
-                           corredores=corredores, filtro_corredor=filtro_corredor)
+                           corredores=corredores, filtro_corredor=filtro_corredor,
+                           total_ciclo=total_ciclo)
 
 
 @app.route('/contagem/registrar', methods=['POST'])
 @login_required
+@requer_perfil('estoquista', 'lider', 'gerente')
 def registrar_contagem():
     item_id = request.form.get('item_id', type=int)
     quantidade = request.form.get('quantidade', type=float)
     ciclo_id = request.form.get('ciclo_id', type=int)
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
     if item_id is None or quantidade is None:
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': 'Dados inválidos.'}), 400
         flash('Dados inválidos.', 'danger')
         return redirect(url_for('contagem', ciclo_id=ciclo_id))
 
@@ -237,34 +311,38 @@ def registrar_contagem():
         CicloContagem.empresa_id == current_user.empresa_id
     ).first_or_404()
 
-    registro_existente = RegistroContagem.query.filter_by(
-        item_ciclo_id=item_id, rodada=1
-    ).first()
-    if registro_existente:
-        registro_existente.quantidade_contada = quantidade
-        registro_existente.usuario_id = current_user.id
-        registro_existente.data_contagem = datetime.utcnow()
-    else:
-        registro = RegistroContagem(
-            item_ciclo_id=item_id,
-            usuario_id=current_user.id,
-            quantidade_contada=quantidade,
-            rodada=1
-        )
-        db.session.add(registro)
+    if item.status != 'pendente':
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': 'Item já foi contado.'}), 409
+        flash('Este item já foi contado.', 'warning')
+        return redirect(url_for('contagem', ciclo_id=ciclo_id))
 
-    if quantidade != item.quantidade_esperada:
-        item.status = 'divergente'
-    else:
-        item.status = 'contado'
+    ok, msg = validar_quantidade(quantidade, item.produto.unidade)
+    if not ok:
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': msg}), 400
+        flash(msg, 'warning')
+        return redirect(url_for('contagem', ciclo_id=ciclo_id))
 
+    registro = RegistroContagem(
+        item_ciclo_id=item_id,
+        usuario_id=current_user.id,
+        quantidade_contada=quantidade,
+        rodada=1
+    )
+    db.session.add(registro)
+
+    item.status = 'divergente' if quantidade != item.quantidade_esperada else 'contado'
     db.session.commit()
+
+    if is_ajax:
+        return jsonify({'ok': True})
     return redirect(url_for('contagem', ciclo_id=ciclo_id))
 
 
 @app.route('/ciclo/<int:ciclo_id>/gerar-segunda-contagem', methods=['POST'])
 @login_required
-@admin_required
+@requer_perfil('lider', 'gerente')
 def gerar_segunda_contagem(ciclo_id):
     ciclo = CicloContagem.query.filter_by(
         id=ciclo_id, empresa_id=current_user.empresa_id
@@ -282,6 +360,7 @@ def gerar_segunda_contagem(ciclo_id):
 
 @app.route('/segunda-contagem/<int:ciclo_id>')
 @login_required
+@requer_perfil('lider', 'gerente')
 def segunda_contagem(ciclo_id):
     ciclo = CicloContagem.query.filter_by(
         id=ciclo_id, empresa_id=current_user.empresa_id
@@ -292,12 +371,16 @@ def segunda_contagem(ciclo_id):
 
 @app.route('/segunda-contagem/registrar', methods=['POST'])
 @login_required
+@requer_perfil('lider', 'gerente')
 def registrar_segunda_contagem():
     item_id = request.form.get('item_id', type=int)
     quantidade = request.form.get('quantidade', type=float)
     ciclo_id = request.form.get('ciclo_id', type=int)
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
     if item_id is None or quantidade is None:
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': 'Dados inválidos.'}), 400
         flash('Dados inválidos.', 'danger')
         return redirect(url_for('segunda_contagem', ciclo_id=ciclo_id))
 
@@ -306,28 +389,32 @@ def registrar_segunda_contagem():
         CicloContagem.empresa_id == current_user.empresa_id
     ).first_or_404()
 
-    registro_existente = RegistroContagem.query.filter_by(
-        item_ciclo_id=item_id, rodada=2
-    ).first()
-    if registro_existente:
-        registro_existente.quantidade_contada = quantidade
-        registro_existente.usuario_id = current_user.id
-        registro_existente.data_contagem = datetime.utcnow()
-    else:
-        registro = RegistroContagem(
-            item_ciclo_id=item_id,
-            usuario_id=current_user.id,
-            quantidade_contada=quantidade,
-            rodada=2
-        )
-        db.session.add(registro)
+    if item.status != 'segunda_contagem':
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': 'Item já verificado.'}), 409
+        flash('Este item já foi verificado.', 'warning')
+        return redirect(url_for('segunda_contagem', ciclo_id=ciclo_id))
 
-    if quantidade == item.quantidade_esperada:
-        item.status = 'aprovado'
-    else:
-        item.status = 'divergente'
+    ok, msg = validar_quantidade(quantidade, item.produto.unidade)
+    if not ok:
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': msg}), 400
+        flash(msg, 'warning')
+        return redirect(url_for('segunda_contagem', ciclo_id=ciclo_id))
 
+    registro = RegistroContagem(
+        item_ciclo_id=item_id,
+        usuario_id=current_user.id,
+        quantidade_contada=quantidade,
+        rodada=2
+    )
+    db.session.add(registro)
+
+    item.status = 'aprovado' if quantidade == item.quantidade_esperada else 'divergente'
     db.session.commit()
+
+    if is_ajax:
+        return jsonify({'ok': True})
     return redirect(url_for('segunda_contagem', ciclo_id=ciclo_id))
 
 
@@ -335,6 +422,7 @@ def registrar_segunda_contagem():
 
 @app.route('/divergencias/<int:ciclo_id>')
 @login_required
+@requer_perfil('gerente')
 def divergencias(ciclo_id):
     ciclo = CicloContagem.query.filter_by(
         id=ciclo_id, empresa_id=current_user.empresa_id
@@ -345,7 +433,7 @@ def divergencias(ciclo_id):
 
 @app.route('/divergencias/ajustar', methods=['POST'])
 @login_required
-@admin_required
+@requer_perfil('gerente')
 def ajustar_divergencia():
     item_id = request.form.get('item_id', type=int)
     quantidade_ajustada = request.form.get('quantidade_ajustada', type=float)
@@ -354,6 +442,10 @@ def ajustar_divergencia():
 
     if not item_id or quantidade_ajustada is None or not justificativa:
         flash('Preencha todos os campos do ajuste.', 'warning')
+        return redirect(url_for('divergencias', ciclo_id=ciclo_id))
+
+    if quantidade_ajustada < 0:
+        flash('Quantidade ajustada não pode ser negativa.', 'warning')
         return redirect(url_for('divergencias', ciclo_id=ciclo_id))
 
     item = ItemCiclo.query.join(CicloContagem).filter(
@@ -379,6 +471,23 @@ def ajustar_divergencia():
     db.session.commit()
     flash('Ajuste registrado com sucesso.', 'success')
     return redirect(url_for('divergencias', ciclo_id=ciclo_id))
+
+
+@app.route('/ciclo/<int:ciclo_id>/deletar', methods=['POST'])
+@login_required
+@admin_required
+def deletar_ciclo(ciclo_id):
+    ciclo = CicloContagem.query.filter_by(
+        id=ciclo_id, empresa_id=current_user.empresa_id
+    ).first_or_404()
+    if ciclo.status == 'fechado':
+        flash('Ciclos fechados não podem ser deletados.', 'warning')
+        return redirect(url_for('dashboard'))
+    data = ciclo.data_referencia.strftime('%d/%m/%Y')
+    db.session.delete(ciclo)
+    db.session.commit()
+    flash(f'Ciclo de {data} deletado.', 'success')
+    return redirect(url_for('dashboard'))
 
 
 @app.route('/ciclo/<int:ciclo_id>/fechar', methods=['POST'])
@@ -427,6 +536,9 @@ def exportar(ciclo_id):
         reg2 = next((r for r in item.registros if r.rodada == 2), None)
         qtd_contada = reg2.quantidade_contada if reg2 else (reg1.quantidade_contada if reg1 else None)
         qtd_ajustada = item.ajuste.quantidade_ajustada if item.ajuste else None
+        def fmt_dt(dt):
+            return dt.strftime('%d/%m/%Y %H:%M') if dt else ''
+
         rows.append({
             'Codigo': item.produto.codigo,
             'Descricao': item.produto.descricao,
@@ -436,9 +548,13 @@ def exportar(ciclo_id):
             'Qtd Esperada': item.quantidade_esperada,
             'Qtd 1a Contagem': reg1.quantidade_contada if reg1 else '',
             'Responsavel 1a': reg1.usuario.nome if reg1 else '',
+            'Data 1a Contagem': fmt_dt(reg1.data_contagem if reg1 else None),
             'Qtd 2a Contagem': reg2.quantidade_contada if reg2 else '',
             'Responsavel 2a': reg2.usuario.nome if reg2 else '',
+            'Data 2a Contagem': fmt_dt(reg2.data_contagem if reg2 else None),
             'Qtd Ajustada': qtd_ajustada or '',
+            'Responsavel Ajuste': item.ajuste.usuario.nome if item.ajuste else '',
+            'Data Ajuste': fmt_dt(item.ajuste.data_ajuste if item.ajuste else None),
             'Justificativa': item.ajuste.justificativa if item.ajuste else '',
             'Status': item.status,
             'Divergencia': (qtd_ajustada or qtd_contada or 0) - item.quantidade_esperada if qtd_contada is not None else '',
@@ -471,10 +587,11 @@ def admin():
 def novo_usuario():
     nome = request.form.get('nome', '').strip()
     email = request.form.get('email', '').strip().lower()
-    senha = request.form.get('senha', '')
-    perfil = request.form.get('perfil', 'contador')
+    perfil = request.form.get('perfil', 'estoquista')
+    if perfil not in PERFIL_LABELS:
+        perfil = 'estoquista'
 
-    if not nome or not email or not senha:
+    if not nome or not email:
         flash('Preencha todos os campos.', 'warning')
         return redirect(url_for('admin'))
 
@@ -486,12 +603,52 @@ def novo_usuario():
         empresa_id=current_user.empresa_id,
         nome=nome,
         email=email,
-        perfil=perfil
+        perfil=perfil,
+        deve_trocar_senha=True
     )
-    usuario.set_senha(senha)
+    usuario.set_senha('123456')
     db.session.add(usuario)
     db.session.commit()
-    flash(f'Usuário {nome} criado com sucesso.', 'success')
+    flash(f'Usuário {nome} criado. Senha inicial: 123456.', 'success')
+    return redirect(url_for('admin'))
+
+
+@app.route('/admin/usuario/<int:uid>/editar', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def editar_usuario(uid):
+    usuario = Usuario.query.filter_by(id=uid, empresa_id=current_user.empresa_id).first_or_404()
+    if request.method == 'POST':
+        nome = request.form.get('nome', '').strip()
+        email = request.form.get('email', '').strip().lower()
+        perfil = request.form.get('perfil', usuario.perfil)
+        if not nome or not email:
+            flash('Preencha todos os campos.', 'warning')
+            return redirect(url_for('editar_usuario', uid=uid))
+        if perfil not in PERFIL_LABELS:
+            perfil = usuario.perfil
+        conflito = Usuario.query.filter(Usuario.email == email, Usuario.id != uid).first()
+        if conflito:
+            flash('Este email já está em uso.', 'warning')
+            return redirect(url_for('editar_usuario', uid=uid))
+        usuario.nome = nome
+        usuario.email = email
+        usuario.perfil = perfil
+        db.session.commit()
+        flash(f'Usuário {nome} atualizado.', 'success')
+        return redirect(url_for('admin'))
+    return render_template('editar_usuario.html', usuario=usuario)
+
+
+@app.route('/admin/usuario/<int:uid>/resetar-senha', methods=['POST'])
+@login_required
+@admin_required
+def resetar_senha(uid):
+    usuario = Usuario.query.filter_by(id=uid, empresa_id=current_user.empresa_id).first_or_404()
+    usuario.set_senha('123456')
+    usuario.deve_trocar_senha = True
+    db.session.commit()
+    flash(f'Senha de {usuario.nome} resetada. Próximo acesso: 123456.', 'success')
     return redirect(url_for('admin'))
 
 
@@ -522,7 +679,8 @@ def criar_dados_iniciais():
             empresa_id=empresa.id,
             nome='Administrador',
             email='admin@demo.com',
-            perfil='admin'
+            perfil='admin',
+            deve_trocar_senha=False
         )
         admin.set_senha('admin123')
         db.session.add(admin)
@@ -530,8 +688,20 @@ def criar_dados_iniciais():
         print('Dados iniciais criados. Login: admin@demo.com / admin123')
 
 
+@app.context_processor
+def inject_globals():
+    return {'perfil_labels': PERFIL_LABELS}
+
+
 with app.app_context():
     db.create_all()
+    try:
+        db.session.execute(db.text(
+            'ALTER TABLE usuarios ADD COLUMN deve_trocar_senha BOOLEAN NOT NULL DEFAULT 0'
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
     criar_dados_iniciais()
 
 if __name__ == '__main__':

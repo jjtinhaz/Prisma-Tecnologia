@@ -69,7 +69,7 @@
         </b>
       </div>
 
-      {% if current_user.perfil == 'admin' %}
+      {% if current_user.perfil in ['admin', 'gerente'] %}
       <form action="{{ url_for('ajustar_divergencia') }}" method="POST" style="margin-top:4px;">
         <input type="hidden" name="item_id" value="{{ item.id }}">
         <input type="hidden" name="ciclo_id" value="{{ ciclo.id }}">
@@ -90,8 +90,8 @@
       </form>
       {% else %}
       <div class="pr-banner pr-banner--info" style="margin-top:4px;margin-bottom:0;">
-        <span class="pr-banner__ic">ⓘ</span>
-        <div>Aguardando ajuste do administrador.</div>
+        <span class="pr-banner__ic">i</span>
+        <div>Aguardando ajuste do gerente ou administrador.</div>
       </div>
       {% endif %}
     </div>

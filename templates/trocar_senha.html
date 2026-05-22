@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Criar senha — Prisma</title>
+  <link href="{{ url_for('static', filename='css/custom.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="pr-login">
+  <div class="pr-login__card">
+    <div class="pr-login__brand">
+      <svg viewBox="0 0 80 56" fill="none" stroke="#E6EDF3" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" width="56" height="40">
+        <path d="M16 42 L36 12 L56 42 Z"/>
+        <path d="M0 30 L26 30"/>
+        <path d="M48 22 L76 18" stroke="#00D4FF"/>
+        <path d="M48 30 L76 30" stroke="#00D4FF" opacity="0.7"/>
+        <path d="M48 38 L76 42" stroke="#00D4FF" opacity="0.45"/>
+      </svg>
+      <h1 class="pr-login__title" style="font-size:18px;margin-top:10px;">Criar nova senha</h1>
+      <p class="pr-login__sub">
+        {% if current_user.deve_trocar_senha %}
+          Olá, <b style="color:var(--fg-1);">{{ current_user.nome }}</b>. Defina sua senha de acesso.
+        {% endif %}
+      </p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="pr-banner pr-banner--{{ 'danger' if category in ['danger','error'] else category }}">
+            <span class="pr-banner__ic">{{ '✕' if category in ['danger','error'] else '!' }}</span>
+            <div>{{ message }}</div>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="pr-infobox" style="margin-bottom:20px;">
+      <div style="font-size:11px;color:var(--fg-2);font-family:var(--font-mono);line-height:1.6;">
+        A senha deve ter pelo menos <b style="color:var(--fg-1);">6 caracteres</b> e ser diferente de <b style="color:var(--fg-1);">123456</b>.
+      </div>
+    </div>
+
+    <form method="POST" autocomplete="off" class="pr-form">
+      <label class="pr-field">
+        <span class="pr-field__label">Nova senha</span>
+        <input type="password" name="nova_senha" class="pr-input" placeholder="••••••••"
+               required minlength="6" autofocus autocomplete="new-password">
+      </label>
+      <label class="pr-field">
+        <span class="pr-field__label">Confirmar senha</span>
+        <input type="password" name="confirmar_senha" class="pr-input" placeholder="••••••••"
+               required minlength="6" autocomplete="new-password">
+      </label>
+      <button type="submit" class="pr-btn pr-btn--primary pr-btn--lg" style="width:100%;margin-top:8px;">
+        Definir senha e entrar
+      </button>
+    </form>
+
+    <div style="margin-top:16px;text-align:center;">
+      <a href="{{ url_for('logout') }}" style="font-size:12px;color:var(--fg-3);font-family:var(--font-mono);">Sair</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>

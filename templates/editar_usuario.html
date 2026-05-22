@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Editar usuário — Prisma{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow"><a href="{{ url_for('admin') }}" style="color:inherit;text-decoration:none;">← Administração</a></div>
+      <h2 class="pr-h2">Editar usuário</h2>
+    </div>
+  </div>
+
+  <div class="pr-card">
+    <form method="POST" class="pr-form">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <label class="pr-field" style="margin-bottom:0;">
+          <span class="pr-field__label">Nome</span>
+          <input type="text" name="nome" class="pr-input" required
+                 value="{{ usuario.nome }}" placeholder="Nome completo">
+        </label>
+        <label class="pr-field" style="margin-bottom:0;">
+          <span class="pr-field__label">Email</span>
+          <input type="email" name="email" class="pr-input" required
+                 value="{{ usuario.email }}" placeholder="email@empresa.com">
+        </label>
+        <label class="pr-field" style="margin-bottom:0;grid-column:1/-1;">
+          <span class="pr-field__label">Perfil</span>
+          <select name="perfil" class="pr-select">
+            {% for valor, label in perfil_labels.items() %}
+            <option value="{{ valor }}" {% if usuario.perfil == valor %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:20px;">
+        <button type="submit" class="pr-btn pr-btn--primary" style="flex:1;">
+          Salvar alterações
+        </button>
+        <a href="{{ url_for('admin') }}" class="pr-btn pr-btn--secondary">
+          Cancelar
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
