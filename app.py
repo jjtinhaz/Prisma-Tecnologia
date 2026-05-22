@@ -697,7 +697,7 @@ with app.app_context():
     db.create_all()
     try:
         db.session.execute(db.text(
-            'ALTER TABLE usuarios ADD COLUMN deve_trocar_senha BOOLEAN NOT NULL DEFAULT 0'
+            'ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS deve_trocar_senha BOOLEAN NOT NULL DEFAULT FALSE'
         ))
         db.session.commit()
     except Exception:
