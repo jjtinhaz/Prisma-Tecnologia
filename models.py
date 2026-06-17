@@ -45,6 +45,8 @@ class Produto(db.Model):
     corredor = db.Column(db.String(20))
     prateleira = db.Column(db.String(20))
     ativo = db.Column(db.Boolean, default=True)
+    estoque_minimo = db.Column(db.Float, nullable=True)
+    curva_abc = db.Column(db.String(1), nullable=True)  # 'A', 'B' ou 'C'
 
     __table_args__ = (db.UniqueConstraint('empresa_id', 'codigo'),)
 
@@ -92,3 +94,29 @@ class AjusteDivergencia(db.Model):
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
     data_ajuste = db.Column(db.DateTime, default=datetime.utcnow)
     usuario = db.relationship('Usuario', lazy=True)
+
+
+class ListaSeparacao(db.Model):
+    __tablename__ = 'listas_separacao'
+    id = db.Column(db.Integer, primary_key=True)
+    empresa_id = db.Column(db.Integer, db.ForeignKey('empresas.id'), nullable=False)
+    descricao = db.Column(db.String(200))
+    criado_por_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
+    data_criacao = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(20), default='aberta')  # aberta / em_separacao / concluida / cancelada
+    itens = db.relationship('ItemSeparacao', backref='lista', lazy=True, cascade='all, delete-orphan')
+    criado_por = db.relationship('Usuario', foreign_keys=[criado_por_id], lazy=True)
+
+
+class ItemSeparacao(db.Model):
+    __tablename__ = 'itens_separacao'
+    id = db.Column(db.Integer, primary_key=True)
+    lista_id = db.Column(db.Integer, db.ForeignKey('listas_separacao.id'), nullable=False)
+    produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=False)
+    quantidade_solicitada = db.Column(db.Float, nullable=False)
+    quantidade_separada = db.Column(db.Float, nullable=True)
+    status = db.Column(db.String(20), default='pendente')  # pendente / separado / parcial / nao_encontrado
+    separado_por_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True)
+    data_separacao = db.Column(db.DateTime, nullable=True)
+    produto = db.relationship('Produto', lazy=True)
+    separado_por = db.relationship('Usuario', foreign_keys=[separado_por_id], lazy=True)

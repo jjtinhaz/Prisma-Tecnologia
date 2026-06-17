@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Nova Lista de Separação — Prisma{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow"><a href="{{ url_for('separacao_lista') }}" style="color:inherit;text-decoration:none;">← Listas de Separação</a></div>
+      <h2 class="pr-h2">Nova lista de separação</h2>
+    </div>
+  </div>
+
+  <div class="pr-card" style="margin-bottom:16px;">
+    <form method="POST" enctype="multipart/form-data" class="pr-form">
+      <label class="pr-field">
+        <span class="pr-field__label">Descrição (opcional)</span>
+        <input type="text" name="descricao" class="pr-input" placeholder="Ex: Pedido #42, Reposição Setor A...">
+      </label>
+      <label class="pr-field" style="margin-bottom:16px;">
+        <span class="pr-field__label">Arquivo Excel (.xlsx)</span>
+        <input type="file" name="arquivo" class="pr-input" accept=".xlsx,.xls" required
+               style="height:auto;padding:10px 14px;">
+      </label>
+      <button type="submit" class="pr-btn pr-btn--primary" style="width:100%;">
+        <i class="bi bi-cloud-upload"></i> Criar lista de separação
+      </button>
+    </form>
+  </div>
+
+  <div class="pr-infobox">
+    <div class="pr-infobox__title">
+      <i class="bi bi-info-circle" style="color:var(--prisma-blue);margin-right:6px;"></i>Formato esperado do Excel
+    </div>
+    <p style="font-size:13px;color:var(--fg-2);margin-bottom:12px;">O arquivo deve ter as seguintes colunas (1ª linha é o cabeçalho). Apenas produtos já cadastrados no sistema serão incluídos.</p>
+    <div style="overflow-x:auto;">
+      <table class="pr-table" style="border:1px solid var(--hairline);border-radius:var(--r-md);overflow:hidden;">
+        <thead>
+          <tr>
+            <th>Codigo</th>
+            <th>Quantidade</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">001</td>
+            <td class="r tnum">10</td>
+          </tr>
+          <tr>
+            <td class="mono">002</td>
+            <td class="r tnum">5</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -7,7 +7,7 @@ from flask import Flask, render_template, redirect, url_for, request, flash, sen
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from functools import wraps
 import pandas as pd
-from models import db, Empresa, Usuario, Produto, CicloContagem, ItemCiclo, RegistroContagem, AjusteDivergencia
+from models import db, Empresa, Usuario, Produto, CicloContagem, ItemCiclo, RegistroContagem, AjusteDivergencia, ListaSeparacao, ItemSeparacao
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-secreta-estoque-2024')
@@ -667,6 +667,440 @@ def toggle_usuario(uid):
     return redirect(url_for('admin'))
 
 
+# ── LISTA DE SEPARAÇÃO ────────────────────────────────────────────────────────
+
+@app.route('/separacao')
+@login_required
+def separacao_lista():
+    listas = ListaSeparacao.query.filter_by(empresa_id=current_user.empresa_id)\
+        .order_by(ListaSeparacao.data_criacao.desc()).all()
+    return render_template('separacao_lista.html', listas=listas)
+
+
+@app.route('/separacao/nova', methods=['GET', 'POST'])
+@login_required
+@requer_perfil('gerente', 'lider')
+def separacao_nova():
+    if request.method == 'POST':
+        arquivo = request.files.get('arquivo')
+        descricao = request.form.get('descricao', '').strip()
+        if not arquivo:
+            flash('Selecione o arquivo Excel.', 'warning')
+            return redirect(url_for('separacao_nova'))
+        try:
+            df = pd.read_excel(arquivo, dtype={'Codigo': str})
+            if 'Codigo' not in df.columns or 'Quantidade' not in df.columns:
+                flash('O arquivo deve ter as colunas: Codigo, Quantidade', 'danger')
+                return redirect(url_for('separacao_nova'))
+
+            lista = ListaSeparacao(
+                empresa_id=current_user.empresa_id,
+                descricao=descricao or None,
+                criado_por_id=current_user.id,
+                status='aberta'
+            )
+            db.session.add(lista)
+            db.session.flush()
+
+            nao_encontrados = []
+            total = 0
+            for _, row in df.iterrows():
+                codigo = str(row['Codigo']).strip()
+                try:
+                    quantidade = float(row['Quantidade'])
+                except (ValueError, TypeError):
+                    continue
+                if quantidade <= 0:
+                    continue
+                produto = Produto.query.filter_by(
+                    empresa_id=current_user.empresa_id, codigo=codigo, ativo=True
+                ).first()
+                if not produto:
+                    nao_encontrados.append(codigo)
+                    continue
+                item = ItemSeparacao(
+                    lista_id=lista.id,
+                    produto_id=produto.id,
+                    quantidade_solicitada=quantidade
+                )
+                db.session.add(item)
+                total += 1
+
+            if total == 0:
+                db.session.rollback()
+                flash('Nenhum produto válido encontrado no arquivo.', 'danger')
+                return redirect(url_for('separacao_nova'))
+
+            db.session.commit()
+            if nao_encontrados:
+                flash(f'Lista criada com {total} item(ns). Códigos não encontrados: {", ".join(nao_encontrados[:10])}.', 'warning')
+            else:
+                flash(f'Lista de separação criada com {total} item(ns).', 'success')
+            return redirect(url_for('separacao_detalhe', lista_id=lista.id))
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Erro ao processar arquivo: {str(e)}', 'danger')
+
+    return render_template('separacao_nova.html')
+
+
+@app.route('/separacao/<int:lista_id>')
+@login_required
+def separacao_detalhe(lista_id):
+    lista = ListaSeparacao.query.filter_by(
+        id=lista_id, empresa_id=current_user.empresa_id
+    ).first_or_404()
+    filtro_corredor = request.args.get('corredor', '')
+    itens_pendentes = [i for i in lista.itens if i.status == 'pendente']
+    if filtro_corredor:
+        itens_pendentes = [i for i in itens_pendentes if i.produto.corredor == filtro_corredor]
+    corredores = sorted({i.produto.corredor for i in lista.itens if i.produto.corredor})
+    total = len(lista.itens)
+    concluidos = sum(1 for i in lista.itens if i.status != 'pendente')
+    return render_template('separacao.html', lista=lista, itens=itens_pendentes,
+                           corredores=corredores, filtro_corredor=filtro_corredor,
+                           total=total, concluidos=concluidos)
+
+
+@app.route('/separacao/registrar', methods=['POST'])
+@login_required
+def registrar_separacao():
+    item_id = request.form.get('item_id', type=int)
+    quantidade_separada = request.form.get('quantidade_separada', type=float)
+    status_item = request.form.get('status_item', 'separado')
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+    if item_id is None or status_item not in ('separado', 'parcial', 'nao_encontrado'):
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': 'Dados inválidos.'}), 400
+        flash('Dados inválidos.', 'danger')
+        return redirect(url_for('separacao_lista'))
+
+    item = ItemSeparacao.query.join(ListaSeparacao).filter(
+        ItemSeparacao.id == item_id,
+        ListaSeparacao.empresa_id == current_user.empresa_id
+    ).first_or_404()
+
+    if item.status != 'pendente':
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': 'Item já separado.'}), 409
+        flash('Item já separado.', 'warning')
+        return redirect(url_for('separacao_detalhe', lista_id=item.lista_id))
+
+    if status_item in ('separado', 'parcial') and (quantidade_separada is None or quantidade_separada < 0):
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': 'Informe a quantidade separada.'}), 400
+        flash('Informe a quantidade separada.', 'warning')
+        return redirect(url_for('separacao_detalhe', lista_id=item.lista_id))
+
+    item.status = status_item
+    item.quantidade_separada = quantidade_separada if status_item != 'nao_encontrado' else 0
+    item.separado_por_id = current_user.id
+    item.data_separacao = datetime.utcnow()
+
+    if all(i.status != 'pendente' for i in item.lista.itens if i.id != item_id) and item.status != 'pendente':
+        if item.lista.status == 'aberta':
+            item.lista.status = 'em_separacao'
+        todos_concluidos = all(i.status != 'pendente' for i in item.lista.itens)
+        if todos_concluidos:
+            item.lista.status = 'concluida'
+
+    db.session.commit()
+
+    if is_ajax:
+        return jsonify({'ok': True})
+    return redirect(url_for('separacao_detalhe', lista_id=item.lista_id))
+
+
+@app.route('/separacao/<int:lista_id>/concluir', methods=['POST'])
+@login_required
+@requer_perfil('gerente', 'lider')
+def concluir_separacao(lista_id):
+    lista = ListaSeparacao.query.filter_by(
+        id=lista_id, empresa_id=current_user.empresa_id
+    ).first_or_404()
+    lista.status = 'concluida'
+    db.session.commit()
+    flash('Lista de separação concluída.', 'success')
+    return redirect(url_for('separacao_lista'))
+
+
+@app.route('/separacao/<int:lista_id>/cancelar', methods=['POST'])
+@login_required
+@requer_perfil('gerente', 'lider')
+def cancelar_separacao(lista_id):
+    lista = ListaSeparacao.query.filter_by(
+        id=lista_id, empresa_id=current_user.empresa_id
+    ).first_or_404()
+    lista.status = 'cancelada'
+    db.session.commit()
+    flash('Lista de separação cancelada.', 'warning')
+    return redirect(url_for('separacao_lista'))
+
+
+@app.route('/separacao/<int:lista_id>/exportar')
+@login_required
+def exportar_separacao(lista_id):
+    lista = ListaSeparacao.query.filter_by(
+        id=lista_id, empresa_id=current_user.empresa_id
+    ).first_or_404()
+    rows = []
+    for item in lista.itens:
+        rows.append({
+            'Codigo': item.produto.codigo,
+            'Descricao': item.produto.descricao,
+            'Corredor': item.produto.corredor or '',
+            'Prateleira': item.produto.prateleira or '',
+            'Unidade': item.produto.unidade,
+            'Qtd Solicitada': item.quantidade_solicitada,
+            'Qtd Separada': item.quantidade_separada if item.quantidade_separada is not None else '',
+            'Status': item.status,
+            'Separado Por': item.separado_por.nome if item.separado_por else '',
+            'Data Separacao': item.data_separacao.strftime('%d/%m/%Y %H:%M') if item.data_separacao else '',
+        })
+    df = pd.DataFrame(rows)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Separacao')
+    output.seek(0)
+    nome = f"separacao_{lista_id}_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=nome,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ── PAINEL DE ESTOQUE ─────────────────────────────────────────────────────────
+
+def _calcular_estoque_atual(empresa_id):
+    """Retorna dict {produto_id: qtd_atual} baseado no último ciclo fechado."""
+    ciclos_fechados = CicloContagem.query.filter_by(
+        empresa_id=empresa_id, status='fechado'
+    ).order_by(CicloContagem.data_referencia.desc()).all()
+
+    estoque = {}
+    for ciclo in ciclos_fechados:
+        for item in ciclo.itens:
+            if item.produto_id in estoque:
+                continue
+            if item.ajuste:
+                qtd = item.ajuste.quantidade_ajustada
+            else:
+                reg = next((r for r in sorted(item.registros, key=lambda r: r.rodada, reverse=True)), None)
+                if reg:
+                    qtd = reg.quantidade_contada
+                else:
+                    qtd = item.quantidade_esperada
+            estoque[item.produto_id] = qtd
+    return estoque
+
+
+@app.route('/painel-estoque')
+@login_required
+@requer_perfil('gerente', 'lider')
+def painel_estoque():
+    produtos = Produto.query.filter_by(empresa_id=current_user.empresa_id, ativo=True)\
+        .order_by(Produto.corredor, Produto.codigo).all()
+    estoque_atual = _calcular_estoque_atual(current_user.empresa_id)
+
+    ultimo_ciclo = CicloContagem.query.filter_by(
+        empresa_id=current_user.empresa_id, status='fechado'
+    ).order_by(CicloContagem.data_referencia.desc()).first()
+
+    total_skus = len(produtos)
+    com_estoque = sum(1 for p in produtos if estoque_atual.get(p.id, None) and estoque_atual.get(p.id) > 0)
+    zerados = sum(1 for p in produtos if p.id in estoque_atual and estoque_atual[p.id] == 0)
+    sem_dados = sum(1 for p in produtos if p.id not in estoque_atual)
+
+    filtro_corredor = request.args.get('corredor', '')
+    filtro_abc = request.args.get('abc', '')
+
+    itens_painel = []
+    for p in produtos:
+        if filtro_corredor and p.corredor != filtro_corredor:
+            continue
+        if filtro_abc and p.curva_abc != filtro_abc:
+            continue
+        itens_painel.append({
+            'produto': p,
+            'qtd_atual': estoque_atual.get(p.id),
+        })
+
+    corredores = sorted({p.corredor for p in produtos if p.corredor})
+
+    return render_template('painel_estoque.html',
+                           itens=itens_painel,
+                           corredores=corredores,
+                           filtro_corredor=filtro_corredor,
+                           filtro_abc=filtro_abc,
+                           total_skus=total_skus,
+                           com_estoque=com_estoque,
+                           zerados=zerados,
+                           sem_dados=sem_dados,
+                           ultimo_ciclo=ultimo_ciclo)
+
+
+# ── SUGESTÃO DE COMPRA ────────────────────────────────────────────────────────
+
+@app.route('/sugestao-compra')
+@login_required
+@requer_perfil('gerente', 'lider')
+def sugestao_compra():
+    produtos = Produto.query.filter_by(empresa_id=current_user.empresa_id, ativo=True)\
+        .order_by(Produto.curva_abc, Produto.codigo).all()
+    estoque_atual = _calcular_estoque_atual(current_user.empresa_id)
+
+    filtro_abc = request.args.get('abc', '')
+    apenas_sugestao = request.args.get('apenas_sugestao', '0') == '1'
+
+    itens = []
+    for p in produtos:
+        if filtro_abc and p.curva_abc != filtro_abc:
+            continue
+        qtd_atual = estoque_atual.get(p.id)
+        sugestao = None
+        if p.estoque_minimo is not None and qtd_atual is not None:
+            diff = p.estoque_minimo - qtd_atual
+            sugestao = max(diff, 0)
+        elif p.estoque_minimo is not None and qtd_atual is None:
+            sugestao = p.estoque_minimo
+        elif p.curva_abc == 'A' and qtd_atual == 0:
+            sugestao = 0
+
+        if apenas_sugestao and (sugestao is None or sugestao == 0):
+            continue
+
+        itens.append({
+            'produto': p,
+            'qtd_atual': qtd_atual,
+            'sugestao': sugestao,
+        })
+
+    return render_template('sugestao_compra.html',
+                           itens=itens,
+                           filtro_abc=filtro_abc,
+                           apenas_sugestao=apenas_sugestao)
+
+
+@app.route('/sugestao-compra/calcular-abc', methods=['POST'])
+@login_required
+@requer_perfil('gerente')
+def calcular_abc():
+    data_limite = date.today().replace(year=date.today().year - 1)
+
+    ciclos = CicloContagem.query.filter(
+        CicloContagem.empresa_id == current_user.empresa_id,
+        CicloContagem.status == 'fechado',
+        CicloContagem.data_referencia >= data_limite
+    ).order_by(CicloContagem.data_referencia.asc()).all()
+
+    if len(ciclos) < 2:
+        flash('São necessários ao menos 2 ciclos fechados nos últimos 12 meses para calcular a Curva ABC.', 'warning')
+        return redirect(url_for('sugestao_compra'))
+
+    estoque_por_ciclo = {}
+    for ciclo in ciclos:
+        snap = {}
+        for item in ciclo.itens:
+            if item.ajuste:
+                qtd = item.ajuste.quantidade_ajustada
+            else:
+                reg = next((r for r in sorted(item.registros, key=lambda r: r.rodada, reverse=True)), None)
+                qtd = reg.quantidade_contada if reg else item.quantidade_esperada
+            snap[item.produto_id] = qtd
+        estoque_por_ciclo[ciclo.id] = snap
+
+    consumo = {}
+    ciclo_ids = [c.id for c in ciclos]
+    for i in range(len(ciclo_ids) - 1):
+        anterior = estoque_por_ciclo[ciclo_ids[i]]
+        posterior = estoque_por_ciclo[ciclo_ids[i + 1]]
+        for pid, qtd_ant in anterior.items():
+            qtd_pos = posterior.get(pid, qtd_ant)
+            delta = qtd_ant - qtd_pos
+            if delta > 0:
+                consumo[pid] = consumo.get(pid, 0) + delta
+
+    if not consumo:
+        flash('Não há variação de estoque entre os ciclos para calcular a Curva ABC.', 'warning')
+        return redirect(url_for('sugestao_compra'))
+
+    total_consumo = sum(consumo.values())
+    ordenados = sorted(consumo.items(), key=lambda x: x[1], reverse=True)
+    acumulado = 0
+    classificacao = {}
+    for pid, cons in ordenados:
+        acumulado += cons
+        pct = acumulado / total_consumo
+        if pct <= 0.80:
+            classificacao[pid] = 'A'
+        elif pct <= 0.95:
+            classificacao[pid] = 'B'
+        else:
+            classificacao[pid] = 'C'
+
+    produtos = Produto.query.filter_by(empresa_id=current_user.empresa_id, ativo=True).all()
+    for p in produtos:
+        p.curva_abc = classificacao.get(p.id, 'C' if p.id in consumo else None)
+    db.session.commit()
+
+    flash(f'Curva ABC recalculada para {len(classificacao)} produto(s).', 'success')
+    return redirect(url_for('sugestao_compra'))
+
+
+@app.route('/produto/<int:produto_id>/estoque-minimo', methods=['POST'])
+@login_required
+@requer_perfil('gerente')
+def atualizar_estoque_minimo(produto_id):
+    produto = Produto.query.filter_by(
+        id=produto_id, empresa_id=current_user.empresa_id, ativo=True
+    ).first_or_404()
+    valor = request.form.get('estoque_minimo', type=float)
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    if valor is not None and valor >= 0:
+        produto.estoque_minimo = valor
+        db.session.commit()
+        if is_ajax:
+            return jsonify({'ok': True, 'valor': valor})
+    else:
+        if is_ajax:
+            return jsonify({'ok': False, 'msg': 'Valor inválido.'}), 400
+    return redirect(url_for('sugestao_compra'))
+
+
+@app.route('/sugestao-compra/exportar')
+@login_required
+@requer_perfil('gerente', 'lider')
+def exportar_sugestao():
+    produtos = Produto.query.filter_by(empresa_id=current_user.empresa_id, ativo=True)\
+        .order_by(Produto.curva_abc, Produto.codigo).all()
+    estoque_atual = _calcular_estoque_atual(current_user.empresa_id)
+    rows = []
+    for p in produtos:
+        qtd_atual = estoque_atual.get(p.id)
+        sugestao = None
+        if p.estoque_minimo is not None:
+            qtd = qtd_atual if qtd_atual is not None else 0
+            sugestao = max(p.estoque_minimo - qtd, 0)
+        rows.append({
+            'Codigo': p.codigo,
+            'Descricao': p.descricao,
+            'Corredor': p.corredor or '',
+            'Unidade': p.unidade,
+            'Curva ABC': p.curva_abc or '',
+            'Estoque Atual': qtd_atual if qtd_atual is not None else '',
+            'Estoque Minimo': p.estoque_minimo if p.estoque_minimo is not None else '',
+            'Sugestao Compra': sugestao if sugestao is not None else '',
+        })
+    df = pd.DataFrame(rows)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Sugestao')
+    output.seek(0)
+    nome = f"sugestao_compra_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=nome,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 # ── INIT DB ───────────────────────────────────────────────────────────────────
 
 def criar_dados_iniciais():
@@ -698,6 +1132,12 @@ with app.app_context():
     try:
         db.session.execute(db.text(
             'ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS deve_trocar_senha BOOLEAN NOT NULL DEFAULT FALSE'
+        ))
+        db.session.execute(db.text(
+            'ALTER TABLE produtos ADD COLUMN IF NOT EXISTS estoque_minimo FLOAT'
+        ))
+        db.session.execute(db.text(
+            'ALTER TABLE produtos ADD COLUMN IF NOT EXISTS curva_abc VARCHAR(1)'
         ))
         db.session.commit()
     except Exception:

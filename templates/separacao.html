@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}Separação — {{ lista.descricao or ('Lista #' ~ lista.id) }}{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow"><a href="{{ url_for('separacao_lista') }}" style="color:inherit;text-decoration:none;">← Listas de Separação</a></div>
+      <h2 class="pr-h2">{{ lista.descricao or ('Lista #' ~ lista.id) }}</h2>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span class="pr-badge
+        {% if lista.status == 'concluida' %}pr-badge--closed
+        {% elif lista.status == 'cancelada' %}pr-badge--danger
+        {% elif lista.status == 'em_separacao' %}pr-badge--warning
+        {% else %}pr-badge--info{% endif %}">
+        <span class="pr-badge__dot"></span>
+        {{ {'aberta':'Aberta','em_separacao':'Em separação','concluida':'Concluída','cancelada':'Cancelada'}.get(lista.status, lista.status) }}
+      </span>
+    </div>
+  </div>
+
+  {# Barra de progresso #}
+  {% if total > 0 %}
+  <div style="margin-bottom:16px;">
+    <div class="pr-progress" style="height:8px;margin-bottom:6px;">
+      <span style="width:{{ (concluidos/total*100)|round }}%;background:var(--success);"></span>
+    </div>
+    <div style="font-size:11px;color:var(--fg-3);font-family:var(--font-mono);">
+      <span id="feitos-count">{{ concluidos }}</span> de {{ total }} itens separados
+    </div>
+  </div>
+  {% endif %}
+
+  {# Ações #}
+  {% if lista.status not in ['concluida', 'cancelada'] and current_user.perfil in ['admin', 'gerente', 'lider'] %}
+  <div style="display:flex;gap:8px;margin-bottom:16px;">
+    <form action="{{ url_for('concluir_separacao', lista_id=lista.id) }}" method="POST" style="display:contents;">
+      <button class="pr-btn pr-btn--secondary pr-btn--sm"
+              onclick="return confirm('Marcar lista como concluída?')">
+        <i class="bi bi-check2-all"></i> Concluir lista
+      </button>
+    </form>
+    <a href="{{ url_for('exportar_separacao', lista_id=lista.id) }}" class="pr-btn pr-btn--ghost pr-btn--sm">
+      <i class="bi bi-download"></i> Exportar Excel
+    </a>
+  </div>
+  {% elif lista.status == 'concluida' %}
+  <div style="margin-bottom:16px;">
+    <a href="{{ url_for('exportar_separacao', lista_id=lista.id) }}" class="pr-btn pr-btn--ghost pr-btn--sm">
+      <i class="bi bi-download"></i> Exportar Excel
+    </a>
+  </div>
+  {% endif %}
+
+  {# Busca #}
+  {% if lista.status not in ['concluida', 'cancelada'] %}
+  <div style="margin-bottom:12px;">
+    <input type="text" id="busca-item" class="pr-input" placeholder="Buscar por código ou descrição..."
+           autocomplete="off" style="height:36px;font-size:13px;">
+  </div>
+
+  {% if corredores %}
+  <div class="pr-chips">
+    <a href="{{ url_for('separacao_detalhe', lista_id=lista.id) }}"
+       class="pr-chip {% if not filtro_corredor %}is-active{% endif %}">Todos</a>
+    {% for c in corredores %}
+    <a href="{{ url_for('separacao_detalhe', lista_id=lista.id, corredor=c) }}"
+       class="pr-chip {% if filtro_corredor == c %}is-active{% endif %}">
+      Corredor {{ c }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <div id="banner-todos" style="display:none;">
+    <div class="pr-banner pr-banner--success">
+      <span class="pr-banner__ic">✓</span>
+      <div>Todos os itens{% if filtro_corredor %} deste corredor{% endif %} foram separados.</div>
+    </div>
+  </div>
+
+  {% if lista.status in ['concluida', 'cancelada'] or not itens %}
+  {% if not itens and lista.status not in ['concluida', 'cancelada'] %}
+  <div class="pr-banner pr-banner--success">
+    <span class="pr-banner__ic">✓</span>
+    <div>Todos os itens{% if filtro_corredor %} deste corredor{% endif %} foram separados.</div>
+  </div>
+  {% endif %}
+
+  {# Tabela de resumo quando concluída ou sem pendentes #}
+  {% if lista.status in ['concluida', 'cancelada'] %}
+  <div class="pr-card">
+    <table class="pr-table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Descrição</th>
+          <th>Local</th>
+          <th class="r">Solicitado</th>
+          <th class="r">Separado</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in lista.itens %}
+        <tr>
+          <td class="mono">{{ item.produto.codigo }}</td>
+          <td>{{ item.produto.descricao }}</td>
+          <td style="color:var(--fg-3);font-size:12px;">
+            {% if item.produto.corredor %}{{ item.produto.corredor }}{% if item.produto.prateleira %}/{{ item.produto.prateleira }}{% endif %}{% endif %}
+          </td>
+          <td class="r tnum">{{ item.quantidade_solicitada|int if item.quantidade_solicitada == item.quantidade_solicitada|int else item.quantidade_solicitada }} {{ item.produto.unidade }}</td>
+          <td class="r tnum">
+            {% if item.quantidade_separada is not none %}
+              {{ item.quantidade_separada|int if item.quantidade_separada == item.quantidade_separada|int else item.quantidade_separada }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="pr-badge {% if item.status == 'separado' %}pr-badge--closed{% elif item.status == 'parcial' %}pr-badge--warning{% elif item.status == 'nao_encontrado' %}pr-badge--danger{% else %}pr-badge--neutral{% endif %}">
+              <span class="pr-badge__dot"></span>
+              {{ {'pendente':'Pendente','separado':'Separado','parcial':'Parcial','nao_encontrado':'Não encontrado'}.get(item.status, item.status) }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% else %}
+
+  <div style="display:flex;flex-direction:column;gap:10px;" id="lista-itens">
+    {% for item in itens %}
+    <div class="pr-card pr-item" data-item-id="{{ item.id }}">
+      <div class="pr-item__head">
+        <div class="pr-item__head-right">
+          <span class="pr-code">{{ item.produto.codigo }}</span>
+          {% if item.produto.corredor %}
+          <span class="pr-loc">
+            <i class="bi bi-geo-alt" style="font-size:11px;"></i>
+            {{ item.produto.corredor }}{% if item.produto.prateleira %}/{{ item.produto.prateleira }}{% endif %}
+          </span>
+          {% endif %}
+        </div>
+        <span class="pr-badge pr-badge--neutral">
+          <span class="pr-badge__dot"></span>Pendente
+        </span>
+      </div>
+
+      <div class="pr-item__title">{{ item.produto.descricao }}</div>
+
+      <div class="pr-item__meta">
+        Solicitado: <b>{{ item.quantidade_solicitada|int if item.quantidade_solicitada == item.quantidade_solicitada|int else item.quantidade_solicitada }} {{ item.produto.unidade }}</b>
+      </div>
+
+      <form class="pr-item__form pr-sep__form" action="{{ url_for('registrar_separacao') }}" method="POST"
+            style="flex-wrap:wrap;gap:8px;">
+        <input type="hidden" name="item_id" value="{{ item.id }}">
+        {% set und = item.produto.unidade|upper %}
+        <input type="number" name="quantidade_separada" class="pr-input pr-input--qty"
+               placeholder="Qtd"
+               step="{{ '1' if und in ['UN','CX','PC','PÇ','PCT','PAR','PECA','PECAS','PEÇAS','UD'] else '0.01' }}"
+               min="0"
+               inputmode="{{ 'numeric' if und in ['UN','CX','PC','PÇ','PCT','PAR','PECA','PECAS','PEÇAS','UD'] else 'decimal' }}">
+        <select name="status_item" class="pr-input" style="flex:1;min-width:130px;height:40px;font-size:13px;">
+          <option value="separado">Separado total</option>
+          <option value="parcial">Parcial</option>
+          <option value="nao_encontrado">Não encontrado</option>
+        </select>
+        <button type="submit" class="pr-btn pr-btn--primary pr-item__submit" style="flex-shrink:0;width:52px;padding:0;">
+          <i class="bi bi-check2" style="font-size:18px;"></i>
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  var restantes = {{ itens|length }};
+
+  function removerCard(card) {
+    card.style.transition = 'opacity 220ms ease, transform 220ms ease';
+    card.style.opacity = '0';
+    card.style.transform = 'translateX(10px)';
+    setTimeout(function () {
+      card.style.transition = 'max-height 280ms ease-out, padding 280ms ease-out, margin 280ms ease-out';
+      card.style.overflow = 'hidden';
+      card.style.maxHeight = card.offsetHeight + 'px';
+      card.style.margin = '0';
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          card.style.maxHeight = '0';
+          card.style.paddingTop = '0';
+          card.style.paddingBottom = '0';
+        });
+      });
+      setTimeout(function () { card.remove(); }, 290);
+    }, 230);
+  }
+
+  var buscaInput = document.getElementById('busca-item');
+  if (buscaInput) {
+    buscaInput.addEventListener('input', function () {
+      var q = this.value.toLowerCase().trim();
+      document.querySelectorAll('.pr-item').forEach(function (card) {
+        if (card.style.maxHeight === '0px') return;
+        var codigo = (card.querySelector('.pr-code') || {}).textContent || '';
+        var titulo = (card.querySelector('.pr-item__title') || {}).textContent || '';
+        card.style.display = (!q || codigo.toLowerCase().includes(q) || titulo.toLowerCase().includes(q)) ? '' : 'none';
+      });
+    });
+  }
+
+  document.querySelectorAll('.pr-sep__form').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var card = form.closest('.pr-item');
+      var btn = form.querySelector('.pr-item__submit');
+      var statusSel = form.querySelector('select[name="status_item"]');
+      var qtdInput = form.querySelector('input[name="quantidade_separada"]');
+
+      if (statusSel.value !== 'nao_encontrado' && (!qtdInput.value || parseFloat(qtdInput.value) < 0)) {
+        qtdInput.focus();
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split" style="font-size:16px;"></i>';
+
+      fetch(form.action, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: new FormData(form)
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (json) {
+          if (!json.ok) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check2" style="font-size:18px;"></i>';
+            return;
+          }
+          btn.innerHTML = '<i class="bi bi-check2-circle" style="font-size:18px;color:#3FB950;"></i>';
+          setTimeout(function () {
+            removerCard(card);
+            restantes--;
+            var feitosEl = document.getElementById('feitos-count');
+            if (feitosEl) feitosEl.textContent = parseInt(feitosEl.textContent) + 1;
+            if (restantes <= 0) {
+              document.getElementById('banner-todos').style.display = '';
+            }
+          }, 400);
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-check2" style="font-size:18px;"></i>';
+        });
+    });
+  });
+})();
+</script>
+{% endblock %}

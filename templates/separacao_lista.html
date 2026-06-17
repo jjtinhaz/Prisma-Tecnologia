@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Listas de Separação — Prisma{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow"><a href="{{ url_for('dashboard') }}" style="color:inherit;text-decoration:none;">← Dashboard</a></div>
+      <h2 class="pr-h2">Listas de Separação</h2>
+    </div>
+    {% if current_user.perfil in ['admin', 'gerente', 'lider'] %}
+    <a href="{{ url_for('separacao_nova') }}" class="pr-btn pr-btn--secondary pr-btn--sm">
+      <i class="bi bi-plus-lg"></i> Nova lista
+    </a>
+    {% endif %}
+  </div>
+
+  {% if not listas %}
+  <div class="pr-banner pr-banner--info">
+    <span class="pr-banner__ic">i</span>
+    <div>Nenhuma lista de separação criada ainda.
+      {% if current_user.perfil in ['admin', 'gerente', 'lider'] %}
+      <a href="{{ url_for('separacao_nova') }}" style="color:inherit;font-weight:600;text-decoration:underline;">Criar primeira lista</a>.
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="pr-list">
+    {% for lista in listas %}
+    {% set total = lista.itens|length %}
+    {% set concluidos = lista.itens|rejectattr('status','equalto','pendente')|list|length %}
+    <div class="pr-list__row">
+      <div>
+        <div class="pr-list__title">
+          {{ lista.descricao or ('Lista #' ~ lista.id) }}
+        </div>
+        <div class="pr-list__sub">
+          {{ lista.data_criacao.strftime('%d/%m/%Y %H:%M') }} · {{ total }} item(ns)
+          {% if lista.criado_por %} · por {{ lista.criado_por.nome }}{% endif %}
+        </div>
+      </div>
+      <div class="pr-list__right">
+        <span class="pr-badge
+          {% if lista.status == 'concluida' %}pr-badge--closed
+          {% elif lista.status == 'cancelada' %}pr-badge--danger
+          {% elif lista.status == 'em_separacao' %}pr-badge--warning
+          {% else %}pr-badge--info{% endif %}">
+          <span class="pr-badge__dot"></span>
+          {{ {'aberta':'Aberta','em_separacao':'Em separação','concluida':'Concluída','cancelada':'Cancelada'}.get(lista.status, lista.status) }}
+        </span>
+        {% if lista.status not in ['cancelada'] %}
+        <a href="{{ url_for('separacao_detalhe', lista_id=lista.id) }}" class="pr-iconbtn" title="Abrir lista">
+          <i class="bi bi-chevron-right" style="font-size:13px;"></i>
+        </a>
+        {% endif %}
+        {% if current_user.perfil in ['admin', 'gerente', 'lider'] and lista.status not in ['concluida', 'cancelada'] %}
+        <form action="{{ url_for('cancelar_separacao', lista_id=lista.id) }}" method="POST" style="display:contents;">
+          <button type="submit" class="pr-iconbtn" title="Cancelar lista"
+                  onclick="return confirm('Cancelar esta lista de separação?')"
+                  style="color:var(--danger);">
+            <i class="bi bi-x-lg" style="font-size:13px;"></i>
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

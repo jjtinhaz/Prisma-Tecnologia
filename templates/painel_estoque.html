@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Painel de Estoque — Prisma{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow">{{ current_user.empresa.nome }}</div>
+      <h2 class="pr-h2">Painel de Estoque</h2>
+    </div>
+    <a href="{{ url_for('sugestao_compra') }}" class="pr-btn pr-btn--ghost pr-btn--sm">
+      <i class="bi bi-cart-plus"></i> Sugestão de Compra
+    </a>
+  </div>
+
+  {% if ultimo_ciclo %}
+  <div style="font-size:12px;color:var(--fg-3);font-family:var(--font-mono);margin-bottom:16px;">
+    <i class="bi bi-clock" style="margin-right:4px;"></i>
+    Referência: ciclo de {{ ultimo_ciclo.data_referencia.strftime('%d/%m/%Y') }}
+  </div>
+  {% else %}
+  <div class="pr-banner pr-banner--warning" style="margin-bottom:16px;">
+    <span class="pr-banner__ic">!</span>
+    <div>Nenhum ciclo fechado encontrado. Feche um ciclo de contagem para visualizar o estoque atual.</div>
+  </div>
+  {% endif %}
+
+  <div class="pr-stats" style="margin-bottom:20px;">
+    <div class="pr-stat">
+      <div class="pr-stat__label">Total SKUs</div>
+      <div class="pr-stat__value">{{ total_skus }}</div>
+    </div>
+    <div class="pr-stat pr-stat--success">
+      <div class="pr-stat__label">Com estoque</div>
+      <div class="pr-stat__value">{{ com_estoque }}</div>
+    </div>
+    <div class="pr-stat {% if zerados > 0 %}pr-stat--warning{% endif %}">
+      <div class="pr-stat__label">Zerados</div>
+      <div class="pr-stat__value">{{ zerados }}</div>
+    </div>
+    <div class="pr-stat {% if sem_dados > 0 %}pr-stat--warning{% endif %}">
+      <div class="pr-stat__label">Sem dados</div>
+      <div class="pr-stat__value">{{ sem_dados }}</div>
+    </div>
+  </div>
+
+  {# Filtros #}
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center;">
+    <input type="text" id="busca-estoque" class="pr-input" placeholder="Buscar código ou descrição..."
+           autocomplete="off" style="height:36px;font-size:13px;flex:1;min-width:200px;">
+  </div>
+
+  {% if corredores %}
+  <div class="pr-chips" style="margin-bottom:8px;">
+    <a href="{{ url_for('painel_estoque') }}{% if filtro_abc %}?abc={{ filtro_abc }}{% endif %}"
+       class="pr-chip {% if not filtro_corredor %}is-active{% endif %}">Todos os corredores</a>
+    {% for c in corredores %}
+    <a href="{{ url_for('painel_estoque', corredor=c) }}{% if filtro_abc %}&abc={{ filtro_abc }}{% endif %}"
+       class="pr-chip {% if filtro_corredor == c %}is-active{% endif %}">
+      Corredor {{ c }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="pr-chips" style="margin-bottom:16px;">
+    <a href="{{ url_for('painel_estoque') }}{% if filtro_corredor %}?corredor={{ filtro_corredor }}{% endif %}"
+       class="pr-chip {% if not filtro_abc %}is-active{% endif %}">Todas as curvas</a>
+    {% for abc in ['A', 'B', 'C'] %}
+    <a href="{{ url_for('painel_estoque', abc=abc) }}{% if filtro_corredor %}&corredor={{ filtro_corredor }}{% endif %}"
+       class="pr-chip {% if filtro_abc == abc %}is-active{% endif %}">Curva {{ abc }}</a>
+    {% endfor %}
+  </div>
+
+  {% if itens %}
+  <div class="pr-card" style="padding:0;overflow:hidden;">
+    <table class="pr-table" id="tabela-estoque">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Descrição</th>
+          <th>Local</th>
+          <th>Und</th>
+          <th class="r">Qtd Atual</th>
+          <th>ABC</th>
+          <th>Mínimo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in itens %}
+        {% set p = row.produto %}
+        {% set qtd = row.qtd_atual %}
+        <tr class="estoque-row"
+            data-codigo="{{ p.codigo|lower }}"
+            data-descricao="{{ p.descricao|lower }}">
+          <td class="mono">{{ p.codigo }}</td>
+          <td>{{ p.descricao }}</td>
+          <td style="color:var(--fg-3);font-size:12px;">
+            {% if p.corredor %}{{ p.corredor }}{% if p.prateleira %}/{{ p.prateleira }}{% endif %}{% endif %}
+          </td>
+          <td style="color:var(--fg-3);">{{ p.unidade }}</td>
+          <td class="r tnum">
+            {% if qtd is not none %}
+              {% if qtd == 0 %}
+                <span style="color:var(--danger);">0</span>
+              {% else %}
+                {{ qtd|int if qtd == qtd|int else qtd }}
+              {% endif %}
+            {% else %}
+              <span style="color:var(--fg-3);">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if p.curva_abc %}
+            <span class="pr-badge
+              {% if p.curva_abc == 'A' %}pr-badge--danger
+              {% elif p.curva_abc == 'B' %}pr-badge--warning
+              {% else %}pr-badge--neutral{% endif %}"
+              style="font-size:11px;">
+              {{ p.curva_abc }}
+            </span>
+            {% else %}
+            <span style="color:var(--fg-3);font-size:12px;">—</span>
+            {% endif %}
+          </td>
+          <td class="tnum" style="color:var(--fg-3);font-size:13px;">
+            {% if p.estoque_minimo is not none %}{{ p.estoque_minimo|int if p.estoque_minimo == p.estoque_minimo|int else p.estoque_minimo }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="pr-banner pr-banner--info">
+    <span class="pr-banner__ic">i</span>
+    <div>Nenhum produto encontrado com os filtros aplicados.</div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  var busca = document.getElementById('busca-estoque');
+  if (!busca) return;
+  busca.addEventListener('input', function () {
+    var q = this.value.toLowerCase().trim();
+    document.querySelectorAll('.estoque-row').forEach(function (tr) {
+      var ok = !q || tr.dataset.codigo.includes(q) || tr.dataset.descricao.includes(q);
+      tr.style.display = ok ? '' : 'none';
+    });
+  });
+})();
+</script>
+{% endblock %}

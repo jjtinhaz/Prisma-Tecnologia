@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Sugestão de Compra — Prisma{% endblock %}
+
+{% block content %}
+<div class="pr-container">
+  <div class="pr-page__head">
+    <div>
+      <div class="pr-eyebrow">{{ current_user.empresa.nome }}</div>
+      <h2 class="pr-h2">Sugestão de Compra</h2>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      {% if current_user.perfil in ['admin', 'gerente'] %}
+      <form action="{{ url_for('calcular_abc') }}" method="POST" style="display:contents;">
+        <button class="pr-btn pr-btn--secondary pr-btn--sm"
+                onclick="return confirm('Recalcular Curva ABC com base nos últimos 12 meses de ciclos fechados?')">
+          <i class="bi bi-arrow-clockwise"></i> Recalcular Curva ABC
+        </button>
+      </form>
+      {% endif %}
+      <a href="{{ url_for('exportar_sugestao') }}" class="pr-btn pr-btn--ghost pr-btn--sm">
+        <i class="bi bi-download"></i> Exportar Excel
+      </a>
+    </div>
+  </div>
+
+  <div class="pr-banner pr-banner--info" style="margin-bottom:16px;">
+    <span class="pr-banner__ic">i</span>
+    <div>
+      A <b>Curva ABC</b> é calculada a partir da variação de estoque entre ciclos fechados nos últimos 12 meses.
+      Define o <b>Estoque Mínimo</b> por produto clicando no campo da coluna — a sugestão de compra aparece automaticamente.
+    </div>
+  </div>
+
+  {# Filtros #}
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center;">
+    <input type="text" id="busca-sugestao" class="pr-input" placeholder="Buscar código ou descrição..."
+           autocomplete="off" style="height:36px;font-size:13px;flex:1;min-width:200px;">
+  </div>
+
+  <div class="pr-chips" style="margin-bottom:8px;">
+    <a href="{{ url_for('sugestao_compra') }}{% if apenas_sugestao %}?apenas_sugestao=1{% endif %}"
+       class="pr-chip {% if not filtro_abc %}is-active{% endif %}">Todas as curvas</a>
+    {% for abc in ['A', 'B', 'C'] %}
+    <a href="{{ url_for('sugestao_compra', abc=abc) }}{% if apenas_sugestao %}&apenas_sugestao=1{% endif %}"
+       class="pr-chip {% if filtro_abc == abc %}is-active{% endif %}">Curva {{ abc }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="pr-chips" style="margin-bottom:16px;">
+    <a href="{{ url_for('sugestao_compra') }}{% if filtro_abc %}?abc={{ filtro_abc }}{% endif %}"
+       class="pr-chip {% if not apenas_sugestao %}is-active{% endif %}">Todos os produtos</a>
+    <a href="{{ url_for('sugestao_compra', apenas_sugestao=1) }}{% if filtro_abc %}&abc={{ filtro_abc }}{% endif %}"
+       class="pr-chip {% if apenas_sugestao %}is-active{% endif %}">
+      <i class="bi bi-exclamation-circle" style="font-size:11px;"></i> Apenas sugestões
+    </a>
+  </div>
+
+  {% if itens %}
+  <div class="pr-card" style="padding:0;overflow:hidden;">
+    <table class="pr-table" id="tabela-sugestao">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Descrição</th>
+          <th>Und</th>
+          <th>ABC</th>
+          <th class="r">Estoque Atual</th>
+          <th class="r">Mínimo</th>
+          <th class="r">Sugestão Compra</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in itens %}
+        {% set p = row.produto %}
+        {% set qtd = row.qtd_atual %}
+        {% set sug = row.sugestao %}
+        <tr class="sugestao-row {% if sug and sug > 0 %}row-alerta{% endif %}"
+            data-codigo="{{ p.codigo|lower }}"
+            data-descricao="{{ p.descricao|lower }}">
+          <td class="mono">{{ p.codigo }}</td>
+          <td>{{ p.descricao }}</td>
+          <td style="color:var(--fg-3);">{{ p.unidade }}</td>
+          <td>
+            {% if p.curva_abc %}
+            <span class="pr-badge
+              {% if p.curva_abc == 'A' %}pr-badge--danger
+              {% elif p.curva_abc == 'B' %}pr-badge--warning
+              {% else %}pr-badge--neutral{% endif %}"
+              style="font-size:11px;">{{ p.curva_abc }}</span>
+            {% else %}
+            <span style="color:var(--fg-3);font-size:12px;">—</span>
+            {% endif %}
+          </td>
+          <td class="r tnum">
+            {% if qtd is not none %}
+              {% if qtd == 0 %}
+                <span style="color:var(--danger);">0</span>
+              {% else %}
+                {{ qtd|int if qtd == qtd|int else qtd }}
+              {% endif %}
+            {% else %}
+              <span style="color:var(--fg-3);">—</span>
+            {% endif %}
+          </td>
+          <td class="r">
+            {% if current_user.perfil in ['admin', 'gerente'] %}
+            <span class="min-display" style="cursor:pointer;font-family:var(--font-mono);font-size:13px;"
+                  title="Clique para editar"
+                  data-produto-id="{{ p.id }}"
+                  data-valor="{{ p.estoque_minimo if p.estoque_minimo is not none else '' }}">
+              {% if p.estoque_minimo is not none %}{{ p.estoque_minimo|int if p.estoque_minimo == p.estoque_minimo|int else p.estoque_minimo }}{% else %}<span style="color:var(--fg-3);">—</span>{% endif %}
+            </span>
+            <form class="min-form" style="display:none;flex:1;" data-produto-id="{{ p.id }}"
+                  action="{{ url_for('atualizar_estoque_minimo', produto_id=p.id) }}" method="POST">
+              <input type="number" name="estoque_minimo" class="pr-input" style="height:30px;width:90px;font-size:12px;padding:4px 8px;"
+                     min="0" step="1" value="{{ p.estoque_minimo if p.estoque_minimo is not none else '' }}"
+                     placeholder="0">
+            </form>
+            {% else %}
+            <span style="font-family:var(--font-mono);font-size:13px;">
+              {% if p.estoque_minimo is not none %}{{ p.estoque_minimo|int if p.estoque_minimo == p.estoque_minimo|int else p.estoque_minimo }}{% else %}<span style="color:var(--fg-3);">—</span>{% endif %}
+            </span>
+            {% endif %}
+          </td>
+          <td class="r tnum">
+            {% if sug is not none and sug > 0 %}
+            <span style="color:var(--warning);font-weight:600;">
+              {{ sug|int if sug == sug|int else sug }}
+            </span>
+            {% elif sug == 0 %}
+            <span style="color:var(--fg-3);">OK</span>
+            {% else %}
+            <span style="color:var(--fg-3);">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="pr-banner pr-banner--info">
+    <span class="pr-banner__ic">i</span>
+    <div>Nenhum produto encontrado com os filtros aplicados.</div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  // Busca
+  var busca = document.getElementById('busca-sugestao');
+  if (busca) {
+    busca.addEventListener('input', function () {
+      var q = this.value.toLowerCase().trim();
+      document.querySelectorAll('.sugestao-row').forEach(function (tr) {
+        var ok = !q || tr.dataset.codigo.includes(q) || tr.dataset.descricao.includes(q);
+        tr.style.display = ok ? '' : 'none';
+      });
+    });
+  }
+
+  // Edição inline do estoque mínimo
+  document.querySelectorAll('.min-display').forEach(function (span) {
+    span.addEventListener('click', function () {
+      var pid = this.dataset.produtoId;
+      var form = document.querySelector('.min-form[data-produto-id="' + pid + '"]');
+      this.style.display = 'none';
+      form.style.display = 'flex';
+      var inp = form.querySelector('input');
+      inp.focus();
+      inp.select();
+
+      function salvar() {
+        var val = parseFloat(inp.value);
+        if (isNaN(val) || val < 0) {
+          cancelar();
+          return;
+        }
+        var fd = new FormData(form);
+        fetch(form.action, {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body: fd
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (json) {
+            if (json.ok) {
+              span.dataset.valor = val;
+              span.innerHTML = val % 1 === 0 ? val : val;
+              var row = span.closest('tr');
+              // Atualizar célula sugestão visualmente
+              var qtdCell = row.cells[4];
+              var qtdText = qtdCell.querySelector('span') ? qtdCell.querySelector('span').textContent.trim() : qtdCell.textContent.trim();
+              var qtdAtual = parseFloat(qtdText);
+              var diff = val - (isNaN(qtdAtual) ? 0 : qtdAtual);
+              var sugCell = row.cells[6];
+              if (diff > 0) {
+                sugCell.innerHTML = '<span style="color:var(--warning);font-weight:600;">' + (diff % 1 === 0 ? Math.ceil(diff) : diff.toFixed(2)) + '</span>';
+              } else {
+                sugCell.innerHTML = '<span style="color:var(--fg-3);">OK</span>';
+              }
+            }
+            form.style.display = 'none';
+            span.style.display = '';
+          })
+          .catch(function () {
+            cancelar();
+          });
+      }
+
+      function cancelar() {
+        form.style.display = 'none';
+        span.style.display = '';
+      }
+
+      inp.addEventListener('blur', salvar, { once: true });
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        if (e.key === 'Escape') { inp.removeEventListener('blur', salvar); cancelar(); }
+      });
+    });
+  });
+})();
+</script>
+
+<style>
+.row-alerta td { background: rgba(227, 179, 65, 0.04); }
+</style>
+{% endblock %}
